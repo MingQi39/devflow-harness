@@ -1,0 +1,29 @@
+# Python
+backend/venv/
+backend/.env
+backend/__pycache__/
+backend/**/__pycache__/
+backend/*.pyc
+backend/.pytest_cache/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+*.log
+
+# 本地发文工具（若误放同目录，也不提交）
+.local/
+docs/private/
+docs/articles/
+docs/pitfalls/
+scripts/generate-*.md
+.cursor/
+assets/*-draft/
+assets/*-work/
