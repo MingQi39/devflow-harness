@@ -13,7 +13,7 @@
 - 停止生成 / 清空对话
 - localStorage 本地持久化
 - Docker 双容器部署 + GitHub Actions 自动发布
-- 域名：`flow.houmq.cn`（与 my-ai-studio 同服务器，端口 8082）
+- 域名：`flow.houmq.cn`（容器映射端口 8082）
 
 ## 技术栈
 
@@ -62,13 +62,13 @@ chmod +x scripts/docker-deploy.sh
 
 ## 自动部署
 
-`main` 分支 push 触发 GitHub Actions（参考 my-ai-studio）：
+`main` 分支 push 触发 GitHub Actions：
 
 1. Ubuntu runner 构建镜像
 2. Mac self-hosted runner SSH 到服务器 `/home/ubuntu/devflow-harness`
 3. `docker compose up -d --no-build`
 
-需在 GitHub 仓库 Settings → Secrets 配置：`DEPLOY_USER`、`DEPLOY_HOST`、`FEISHU_APP_SECRET`（与 my-ai-studio 相同服务器时可复用）。
+需在 GitHub 仓库 Settings → Secrets 配置：`DEPLOY_USER`、`DEPLOY_HOST`、`FEISHU_APP_SECRET`（可选，飞书部署通知）。
 
 ## 路线图
 

@@ -30,7 +30,7 @@ React (5173) ──Vite /api proxy──► FastAPI (8000) ──► LLM API
            backend → OpenAI-compatible LLM API
 ```
 
-与 my-ai-studio 共用服务器；studio 用 **8081**，devflow-harness 用 **8082**。
+frontend 容器映射宿主机 **8082**，由主机 Nginx 反代至 `flow.houmq.cn`。
 
 ## 关键设计
 

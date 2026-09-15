@@ -1,6 +1,6 @@
 # Docker 部署（flow.houmq.cn）
 
-与 [my-ai-studio](https://github.com/MingQi39/my-ai-studio) 共用同一台云服务器，容器端口 **8082**（studio 使用 8081）。
+生产环境通过 Docker 部署，frontend 容器映射宿主机端口 **8082**。
 
 ## 架构
 
@@ -13,10 +13,10 @@
 
 ## 前置条件
 
-- 服务器已安装 Docker 与 Docker Compose v2（与 my-ai-studio 相同机器）
+- 服务器已安装 Docker 与 Docker Compose v2
 - DNS：`flow.houmq.cn` A 记录指向服务器公网 IP
 - 安全组放行 **80**（HTTPS 按需放行 443）
-- GitHub Actions Secrets（与 my-ai-studio 相同服务器）：
+- GitHub Actions Secrets：
   - `DEPLOY_USER`
   - `DEPLOY_HOST`
   - `FEISHU_APP_SECRET`（可选，部署飞书通知）
