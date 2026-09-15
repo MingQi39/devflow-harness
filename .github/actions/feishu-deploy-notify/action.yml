@@ -1,0 +1,32 @@
+name: Feishu Deploy Notify
+description: Push GitHub deploy job result to Feishu group via Open API app bot.
+
+inputs:
+  status:
+    description: GitHub job status (success/failure/cancelled)
+    required: true
+  project_name:
+    description: Human-readable deploy project name shown in notification
+    required: true
+  job_name:
+    description: Display name for the deploy job
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Send Feishu notification
+      shell: bash
+      run: bash "${{ github.action_path }}/notify.sh"
+      env:
+        FEISHU_APP_SECRET: ${{ env.FEISHU_APP_SECRET }}
+        DEPLOY_STATUS: ${{ inputs.status }}
+        DEPLOY_PROJECT: ${{ inputs.project_name }}
+        DEPLOY_JOB_NAME: ${{ inputs.job_name != '' && inputs.job_name || github.job }}
+        DEPLOY_REPO: ${{ github.repository }}
+        DEPLOY_BRANCH: ${{ github.ref_name }}
+        DEPLOY_SHA: ${{ github.sha }}
+        DEPLOY_ACTOR: ${{ github.actor }}
+        DEPLOY_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        DEPLOY_TITLE: ${{ github.event.head_commit.message || github.event.pull_request.title || '' }}

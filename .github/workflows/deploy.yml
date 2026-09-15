@@ -1,0 +1,127 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: devflow-harness-production-deploy
+  cancel-in-progress: true
+
+jobs:
+  build-images:
+    name: Build production images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build images
+        run: |
+          docker build -t devflow-harness-backend:latest -f backend/Dockerfile.server backend
+          docker build -t devflow-harness-frontend:latest -f frontend/Dockerfile.server frontend
+          docker save devflow-harness-backend:latest devflow-harness-frontend:latest | gzip > images.tar.gz
+
+      - name: Upload built images
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-images
+          path: images.tar.gz
+          retention-days: 1
+          if-no-files-found: error
+
+  deploy:
+    name: Deploy from Mac
+    needs: build-images
+    runs-on: [self-hosted, macOS, deploy]
+    permissions:
+      contents: read
+    env:
+      DEPLOY_PATH: /home/ubuntu/devflow-harness
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download built images
+        uses: actions/download-artifact@v4
+        with:
+          name: production-images
+
+      - name: Load and upload images from Mac
+        shell: bash
+        run: |
+          set -euo pipefail
+          SSH_KEY_PATH="$HOME/.ssh/id_ed25519_personal"
+          test -r "$SSH_KEY_PATH"
+          chmod 600 "$SSH_KEY_PATH"
+          docker load -i images.tar.gz
+          docker save devflow-harness-backend:latest devflow-harness-frontend:latest | gzip -1 | \
+            ssh -i "$SSH_KEY_PATH" \
+              -o IdentitiesOnly=yes \
+              -o ServerAliveInterval=30 \
+              -o ServerAliveCountMax=40 \
+              "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+              'gzip -d | sudo -n docker load'
+
+      - name: Sync deployment manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          SSH_KEY_PATH="$HOME/.ssh/id_ed25519_personal"
+          scp -i "$SSH_KEY_PATH" \
+            -o IdentitiesOnly=yes \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=40 \
+            docker-compose.server.yml \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${DEPLOY_PATH}/docker-compose.server.yml"
+
+      - name: Activate release
+        shell: bash
+        run: |
+          set -euo pipefail
+          SSH_KEY_PATH="$HOME/.ssh/id_ed25519_personal"
+          ssh -i "$SSH_KEY_PATH" \
+            -o IdentitiesOnly=yes \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=40 \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" <<'SSH'
+              set -euo pipefail
+              cd /home/ubuntu/devflow-harness
+              if ! sudo -n docker compose -f docker-compose.server.yml up -d --no-build; then
+                echo "::error::docker compose up failed; dumping diagnostics"
+                sudo -n docker compose -f docker-compose.server.yml ps -a || true
+                sudo -n docker compose -f docker-compose.server.yml logs --tail=200 backend || true
+                sudo -n docker inspect --format='{{.Name}} status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}n/a{{end}}' \
+                  $(sudo -n docker compose -f docker-compose.server.yml ps -aq) 2>/dev/null || true
+                exit 1
+              fi
+              sudo -n docker compose -f docker-compose.server.yml ps
+          SSH
+
+  notify:
+    name: Notify Feishu deploy result
+    needs: [build-images, deploy]
+    if: |
+      always() &&
+      needs.build-images.result != 'skipped' &&
+      (
+        needs.build-images.result == 'failure' ||
+        needs.deploy.result == 'success' ||
+        needs.deploy.result == 'failure'
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/actions/feishu-deploy-notify
+          sparse-checkout-cone-mode: true
+
+      - name: Notify Feishu
+        uses: ./.github/actions/feishu-deploy-notify
+        with:
+          status: ${{ needs.build-images.result == 'success' && needs.deploy.result == 'success' && 'success' || 'failure' }}
+          project_name: DevFlow Harness
+          job_name: deploy
+        env:
+          FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}

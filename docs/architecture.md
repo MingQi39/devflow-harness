@@ -10,26 +10,27 @@ Dev：生成 / 修改代码 → 平台内预览 / 调试
 QA：内嵌浏览器测试 → 数据库查看
 ```
 
-M1 只实现最底层：**Harness Shell + 流式对话通道**。
+M1 实现：**Harness Shell + 流式对话通道 + Docker 公网部署**。
 
 ## M1 架构
 
+### 本地开发
+
 ```
-┌──────────────────────────────────────────────┐
-│              React Shell (5173)              │
-│  Chat UI · Markdown · localStorage           │
-└────────────────────┬─────────────────────────┘
-                     │ /api/* (Vite proxy)
-                     ▼
-┌──────────────────────────────────────────────┐
-│           FastAPI Harness Core (8000)        │
-│  POST /chat        非流式                     │
-│  POST /chat/stream SSE 流式                   │
-└────────────────────┬─────────────────────────┘
-                     │
-                     ▼
-            OpenAI-compatible LLM API
+React (5173) ──Vite /api proxy──► FastAPI (8000) ──► LLM API
 ```
+
+### 生产部署（flow.houmq.cn）
+
+```
+浏览器 → 主机 Nginx :80
+           → frontend 容器 Nginx :8082
+                ├─ /api/* → backend :8000
+                └─ /*     → 静态 React
+           backend → OpenAI-compatible LLM API
+```
+
+与 my-ai-studio 共用服务器；studio 用 **8081**，devflow-harness 用 **8082**。
 
 ## 关键设计
 
