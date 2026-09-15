@@ -1,6 +1,6 @@
 # DevFlow Harness
 
-多角色 Agent 研发平台 —— 参考 [Pi Agent](https://github.com/earendil-works/pi) 与 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)，用 **Python Harness 内核 + React 工作台** 逐步演进，服务 PM / Dev / QA 全链路协作。
+PM / 前后端 / QA 共用的研发工作台。参考 [Pi Agent](https://github.com/earendil-works/pi) 的 Session + Tools，以及 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的插件化扩展；内核是 Python Harness，界面是 React 工作台。一条需求从发起到提测都在平台内完成，不是 IDE 插件。
 
 > 当前版本：**M1 — Harness 骨架 + SSE 流式对话 + Docker 部署**
 
@@ -72,18 +72,22 @@ chmod +x scripts/docker-deploy.sh
 
 ## 路线图
 
+终局：产品发需求 → 生成原型并评审 → 平台内生成/预览/调试前后端 → 提测 → 内嵌浏览器测试 → 平台内看数据库。M3 先用「待办列表」跑通全角色；之后把每个角色做到能真正干活。插件协议放在工具都跑真之后（M9），避免空框架。
+
 | 里程碑 | 目标 |
 |--------|------|
-| **M1** | Harness 骨架 + SSE + Docker 部署 ✅ |
-| M2 | 插件协议 + Dev 插件 |
-| M3 | Agent Loop + 文件工具 |
-| M4 | 平台内预览 |
-| M5 | Project Session |
-| M6 | PM 插件（需求 → PRD / 原型） |
-| M7 | QA 插件（内嵌浏览器） |
-| M8 | HTTPS + 生产加固 |
+| **M1** | 对话通道：Harness 骨架 + SSE + Docker ✅ |
+| M2 | Session 工作区 + Agent Loop + 读/写文件 |
+| M3 | 全角色最小闭环（待办 Demo：需求 → 原型 → 预览 → iframe 点测） |
+| M4 | Dev 工作台完善：真实预览运行时 + 调试 |
+| M5 | 后端运行时 + 平台内数据库浏览/查询 |
+| M6 | PM 完善：PRD、多页原型、评审批注与门禁 |
+| M7 | QA 完善：内嵌浏览器、截图、缺陷回流 Session |
+| M8 | 角色协作：登录、PM/前后端/QA、同一 Session 状态机 |
+| M9 | Plugin Registry：现有工具收成可扩展协议 |
+| M10 | 生产级：HTTPS、审计、多项目隔离 |
 
-架构说明见 [`docs/architecture.md`](docs/architecture.md)。
+详细验收与刻意延后项见 [`docs/roadmap.md`](docs/roadmap.md)。架构见 [`docs/architecture.md`](docs/architecture.md)。
 
 ## License
 

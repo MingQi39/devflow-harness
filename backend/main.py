@@ -13,7 +13,7 @@ from fastapi.responses import StreamingResponse
 from openai import OpenAI
 from pydantic import BaseModel, Field
 
-load_dotenv()
+load_dotenv(override=True)
 
 APP_NAME = "DevFlow Harness"
 APP_VERSION = "0.1.0-m1"
