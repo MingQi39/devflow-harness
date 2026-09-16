@@ -41,11 +41,13 @@ Pi Agent 提供内核模型（Session、Tools、事件）；DeepSeek Harness 提
 
 设计规格：[`superpowers/specs/2026-09-16-m1-user-auth-design.md`](superpowers/specs/2026-09-16-m1-user-auth-design.md)
 
-### M2 — Session 工作区 + Agent Loop
+### M2 — Session 工作区 + Agent Loop ✅
 
 一个需求 = 一个项目 Session：有文件树、对话绑在项目上。模型进入工具循环，能读/写项目文件，而不只是聊天。
 
 M1.5 的 `conversations` 可演进为 Session；M2 在此基础上加项目目录与 Agent Loop。
+
+**已完成：** Session 工作目录、文件树 API、Agent Loop（`read_file` / `write_file`）、SSE tool 事件、停止生成、前端文件树面板。
 
 **验收：** 新建 Session → 对话中让模型创建/修改一个文件 → 文件树可见 → 刷新后 Session 还在。
 

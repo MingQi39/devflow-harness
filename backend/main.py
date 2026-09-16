@@ -1,4 +1,4 @@
-"""DevFlow Harness — M1 auth, multi-conversation chat API."""
+"""DevFlow Harness — M2 Session workspace + Agent Loop chat API."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import get_settings
 from db import SessionLocal
-from routers import auth, chat, conversations, shared
+from routers import auth, chat, conversations, files, shared
 from seed import seed_permissions
 
 
@@ -49,6 +49,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(conversations.router)
+app.include_router(files.router)
 app.include_router(shared.router)
 app.include_router(chat.router)
 

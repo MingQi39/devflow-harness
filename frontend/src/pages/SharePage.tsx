@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import MarkdownContent from '../components/MarkdownContent'
+import ChatMessageRow from '../components/ChatMessageRow'
 import { apiFetch } from '../lib/api'
 import { mapMessage } from '../lib/mappers'
 import type { ChatMessage } from '../types/chat'
@@ -93,24 +93,7 @@ export default function SharePage() {
             </div>
           ) : null}
           {messages.map((message) => (
-            <article
-              key={message.id}
-              className={`message-row ${message.role === 'user' ? 'user' : 'assistant'}`}
-            >
-              <div className="message-meta">
-                <span>{message.role === 'user' ? '用户' : 'Assistant'}</span>
-                <time>{formatTime(message.createdAt)}</time>
-              </div>
-              <div className="message-bubble">
-                <div className="message-body">
-                  {message.role === 'assistant' ? (
-                    <MarkdownContent content={message.content} />
-                  ) : (
-                    <p>{message.content}</p>
-                  )}
-                </div>
-              </div>
-            </article>
+            <ChatMessageRow key={message.id} message={message} />
           ))}
         </div>
       </div>

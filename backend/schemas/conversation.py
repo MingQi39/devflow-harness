@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -34,6 +34,9 @@ class MessageOut(BaseModel):
     id: uuid.UUID
     role: MessageRole
     content: str
+    tool_calls: Optional[list[dict[str, Any]]] = None
+    tool_call_id: Optional[str] = None
+    tool_name: Optional[str] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -1,22 +1,20 @@
-"""Streaming chat route."""
+"""Streaming chat route with agent loop."""
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterator
-from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from db import SessionLocal, get_db
+from db import get_db
 from deps import require_permission
-from models.conversation import Conversation
-from models.message import Message, MessageRole
+from models.message import Message
 from models.user import User
 from schemas.chat import ChatStreamRequest
+from services.agent_loop import persist_user_message, stream_agent_events
 from services.conversations import get_owned_conversation
 from services.llm import get_llm_client, get_model
 
@@ -36,36 +34,34 @@ def chat_stream(
         .order_by(Message.created_at.asc())
         .all()
     )
-    messages = [{"role": m.role.value, "content": m.content} for m in history]
-    messages.append({"role": "user", "content": body.message})
-
-    stream = get_llm_client().chat.completions.create(
-        model=get_model(),
-        messages=messages,
-        stream=True,
-    )
 
     conversation_id = conversation.id
     user_message_text = body.message
-    _persist_user_message(conversation_id, user_message_text)
+    persist_user_message(conversation_id, user_message_text)
+
+    client = get_llm_client()
+    model = get_model()
 
     def generate() -> Iterator[str]:
-        assistant_parts: list[str] = []
+        # 同步 StreamingResponse 下 request.is_disconnected 会持续误报，不能用于停止检测。
+        # 客户端 AbortController 断开时会触发 GeneratorExit。
         try:
-            for chunk in stream:
-                delta = chunk.choices[0].delta.content
-                if delta:
-                    assistant_parts.append(delta)
-                    yield f"data: {json.dumps({'content': delta}, ensure_ascii=False)}\n\n"
-            yield "data: [DONE]\n\n"
+            yield ": connected\n\n"
+            yield from stream_agent_events(
+                client=client,
+                model=model,
+                conversation_id=conversation_id,
+                history=history,
+                user_message=user_message_text,
+                should_stop=lambda: False,
+            )
+        except GeneratorExit:
+            return
         except Exception as exc:  # noqa: BLE001
-            payload = json.dumps({"error": str(exc)}, ensure_ascii=False)
-            yield f"data: {payload}\n\n"
+            from services.agent_loop import sse_encode
+
+            yield sse_encode({"type": "error", "error": str(exc)})
             yield "data: [DONE]\n\n"
-        finally:
-            assistant_text = "".join(assistant_parts)
-            if assistant_text:
-                _persist_assistant_message(conversation_id, assistant_text)
 
     return StreamingResponse(
         generate(),
@@ -76,41 +72,3 @@ def chat_stream(
             "X-Accel-Buffering": "no",
         },
     )
-
-
-def _persist_user_message(conversation_id, user_message_text: str) -> None:
-    db = SessionLocal()
-    try:
-        conversation = db.get(Conversation, conversation_id)
-        if conversation is None:
-            return
-        db.add(
-            Message(
-                conversation_id=conversation_id,
-                role=MessageRole.user,
-                content=user_message_text,
-            )
-        )
-        conversation.updated_at = datetime.now(timezone.utc)
-        db.commit()
-    finally:
-        db.close()
-
-
-def _persist_assistant_message(conversation_id, assistant_text: str) -> None:
-    db = SessionLocal()
-    try:
-        conversation = db.get(Conversation, conversation_id)
-        if conversation is None:
-            return
-        db.add(
-            Message(
-                conversation_id=conversation_id,
-                role=MessageRole.assistant,
-                content=assistant_text,
-            )
-        )
-        conversation.updated_at = datetime.now(timezone.utc)
-        db.commit()
-    finally:
-        db.close()

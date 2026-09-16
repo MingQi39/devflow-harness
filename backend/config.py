@@ -13,7 +13,7 @@ load_dotenv(override=True)
 
 class Settings:
     app_name: str = "DevFlow Harness"
-    app_version: str = "0.2.0-m1-auth"
+    app_version: str = "0.3.0-m2-session"
 
     database_url: str = os.getenv(
         "DATABASE_URL",
@@ -37,6 +37,8 @@ class Settings:
     ]
 
     app_public_url: str = os.getenv("APP_PUBLIC_URL", "http://localhost:5173")
+    workspaces_root: str = os.getenv("WORKSPACES_ROOT", "./workspaces")
+    agent_max_iterations: int = int(os.getenv("AGENT_MAX_ITERATIONS", "12"))
 
 
 @lru_cache

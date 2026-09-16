@@ -48,9 +48,9 @@ export default function ConversationSidebar({
         <span className="sidebar-brand-text">DevFlow Harness</span>
       </div>
 
-      <div className="sidebar-section-label">对话历史</div>
+      <div className="sidebar-section-label">对话列表</div>
       <div className="sidebar-header">
-        <h2>{conversations.length} 条对话</h2>
+        <h2>{conversations.length} 个对话</h2>
         <button type="button" className="sidebar-new-btn" onClick={onCreate}>
           <IconPlus />
           新建

@@ -26,6 +26,7 @@ from schemas.conversation import (
     ShareStatusResponse,
 )
 from services.conversations import get_owned_conversation
+from services.workspace import ensure_workspace, remove_workspace
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -61,6 +62,7 @@ def create_conversation(
     db.add(conversation)
     db.commit()
     db.refresh(conversation)
+    ensure_workspace(conversation.id)
     return conversation
 
 
@@ -85,8 +87,10 @@ def delete_conversation(
     db: Annotated[Session, Depends(get_db)],
 ) -> Response:
     conversation = get_owned_conversation(db, user, conversation_id)
+    conversation_uuid = conversation.id
     db.delete(conversation)
     db.commit()
+    remove_workspace(conversation_uuid)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
