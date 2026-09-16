@@ -116,10 +116,13 @@ export default function ChatPage() {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <div>
-          <p className="eyebrow">DevFlow Harness · M1</p>
-          <h1>Agent Harness 流式对话</h1>
-          <p className="subtitle">全栈研发平台的第一块地基：SSE 流式 Chat + Markdown + 本地持久化</p>
+        <div className="header-brand">
+          <img className="app-logo" src="/favicon.png" alt="DevFlow Harness" width={40} height={40} />
+          <div>
+            <p className="eyebrow">DevFlow Harness · M1</p>
+            <h1>Agent Harness 流式对话</h1>
+            <p className="subtitle">全栈研发平台的第一块地基：SSE 流式 Chat + Markdown + 本地持久化</p>
+          </div>
         </div>
         <div className="header-actions">
           {isLoading ? (

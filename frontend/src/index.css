@@ -34,6 +34,19 @@ textarea {
   margin-bottom: 20px;
 }
 
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.app-logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
 .eyebrow {
   margin: 0 0 4px;
   font-size: 12px;
