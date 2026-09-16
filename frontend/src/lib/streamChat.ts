@@ -1,24 +1,32 @@
-import type { ChatMessage } from '../types/chat'
+import { getToken } from './api'
 
 interface StreamOptions {
+  conversationId: string
   message: string
-  history: ChatMessage[]
   signal?: AbortSignal
   onChunk: (chunk: string) => void
 }
 
 export async function streamChat({
+  conversationId,
   message,
-  history,
   signal,
   onChunk,
 }: StreamOptions): Promise<void> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  }
+  const token = getToken()
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+
   const response = await fetch('/api/chat/stream', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({
+      conversation_id: conversationId,
       message,
-      history: history.map(({ role, content }) => ({ role, content })),
     }),
     signal,
   })

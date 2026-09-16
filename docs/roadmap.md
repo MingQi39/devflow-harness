@@ -27,11 +27,25 @@ Pi Agent 提供内核模型（Session、Tools、事件）；DeepSeek Harness 提
 
 流式聊天 + Docker 公网上线。证明 Harness Shell 和模型通道成立。
 
+**已完成：** SSE 流式、`/health`、React 打字机、Docker 双容器部署、GitHub Actions、flow.houmq.cn。
+
+### M1.5 — 用户体系 + 多对话 + 分享 ✅
+
+在 M1 骨架上提前引入原 M8 的用户/角色能力：
+
+- 注册 / 登录 / JWT（7 天）
+- 四角色 RBAC（PM / 前端 / 后端 / QA），权限 seed 可扩展
+- 多对话持久化（PostgreSQL）
+- 聊天分享链接（未登录只读）
+- Docker 三容器（+ postgres）
+
+设计规格：[`superpowers/specs/2026-09-16-m1-user-auth-design.md`](superpowers/specs/2026-09-16-m1-user-auth-design.md)
+
 ### M2 — Session 工作区 + Agent Loop
 
 一个需求 = 一个项目 Session：有文件树、对话绑在项目上。模型进入工具循环，能读/写项目文件，而不只是聊天。
 
-这是后面所有角色工具的根。没有 Session 和 Loop，原型、预览、测浏览器都是假的。
+M1.5 的 `conversations` 可演进为 Session；M2 在此基础上加项目目录与 Agent Loop。
 
 **验收：** 新建 Session → 对话中让模型创建/修改一个文件 → 文件树可见 → 刷新后 Session 还在。
 
@@ -69,7 +83,9 @@ Session 内能生成并运行 API；自带一份项目数据库（起步可用 S
 
 ### M8 — 角色协作
 
-登录与角色（PM / 前端 / 后端 / QA）。同一 Session 多人进入，各看各的工具，状态机统一：需求中 → 评审中 → 开发中 → 提测 → 通过。
+~~登录与角色（PM / 前端 / 后端 / QA）。~~ **M1.5 已完成基础：** 注册、登录、四角色、RBAC seed。
+
+M8 剩余：同一 Session 多人进入，各看各的工具，状态机统一：需求中 → 评审中 → 开发中 → 提测 → 通过。
 
 **验收：** 四个角色账号能同时打开同一 Session；权限挡住越权操作（QA 不能改评审结论，PM 不能直接改生产库）。
 
@@ -81,7 +97,7 @@ Session 内能生成并运行 API；自带一份项目数据库（起步可用 S
 
 ### M10 — 生产级
 
-Auth 完善、HTTPS、审计日志、多项目隔离、备份。这是把 Demo 平台收成可给真实团队用的环境，不是新功能故事。
+Auth 完善（refresh token、邮箱验证）、HTTPS、审计日志、多项目隔离、备份。M1.5 已有 PostgreSQL 持久化，M10 做生产加固。
 
 **验收：** HTTPS 访问；项目数据互不可见；关键操作（改文件、查库、提测）有审计。
 
@@ -93,3 +109,4 @@ Auth 完善、HTTPS、审计日志、多项目隔离、备份。这是把 Demo �
 | 真会评的多人会议（音视频） | 不进主路线；M6 用原型批注代替开会 |
 | VS Code / Cursor 扩展 | 不做；本产品就是工作台 |
 | 任意语言任意仓库的通用 IDE | 不做；先吃透 Session 内生成的项目 |
+| 邮箱验证 / JWT 黑名单 | M10 |

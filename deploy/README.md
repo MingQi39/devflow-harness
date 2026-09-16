@@ -8,8 +8,12 @@
 浏览器 → http://flow.houmq.cn (主机 Nginx :80)
            → frontend Nginx (127.0.0.1:8082)
                 ├─ /api/* → backend (FastAPI :8000)
-                └─ 其余路径 → 静态前端
+                └─ 其余路径 → 静态 React SPA
+           backend → postgres (PostgreSQL :5432, 容器内)
+                 → OpenAI-compatible LLM API
 ```
+
+三容器：`postgres` + `backend` + `frontend`。backend 启动时自动 Alembic 迁移 + seed RBAC 权限。
 
 ## 前置条件
 
@@ -31,7 +35,7 @@ sudo chown ubuntu:ubuntu /home/ubuntu/devflow-harness
 # 2. 配置环境变量（在服务器上）
 cd /home/ubuntu/devflow-harness
 cp .env.docker.example .env   # 或手动创建
-nano .env                     # 填写 OPENAI_API_KEY 等
+nano .env                     # 填写 OPENAI_API_KEY、POSTGRES_PASSWORD、JWT_SECRET、APP_PUBLIC_URL 等
 
 # 3. 主机 Nginx
 sudo cp deploy/nginx-flow.houmq.cn.conf /etc/nginx/sites-available/flow.houmq.cn
@@ -79,3 +83,6 @@ sudo nginx -t && sudo systemctl reload nginx
 | API 失败 | frontend nginx `/api/` 是否转发到 backend |
 | SSE 不流式 | nginx `proxy_buffering off`、后端日志 |
 | CORS | `.env` 中 `CORS_ORIGINS` 是否含 `http://flow.houmq.cn` |
+| 登录失败 / 401 | `JWT_SECRET` 是否配置；postgres 是否 healthy |
+| 分享链接不对 | `APP_PUBLIC_URL` 是否指向 `https://flow.houmq.cn` |
+| 数据库连接失败 | `POSTGRES_PASSWORD` 与 `DATABASE_URL` 是否一致 |

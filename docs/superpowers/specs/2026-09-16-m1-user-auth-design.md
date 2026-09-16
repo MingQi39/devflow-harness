@@ -1,7 +1,7 @@
 # M1 用户体系 + 多对话 + 分享 — 设计规格
 
 > 日期：2026-09-16  
-> 状态：待实现  
+> 状态：已实现  
 > 基于：M1 流式聊天骨架，提前引入原路线图 M8 的用户/角色能力
 
 ## 背景与目标
@@ -182,9 +182,10 @@ M1 四角色聊天体验一致；占位权限仅 seed，不拦截任何 M1 路�
 ```
 backend/
 ├── main.py                 # FastAPI 入口，lifespan 里 migrate + seed
-├── config.py               # Settings（DATABASE_URL, JWT_SECRET, …）
+├── config.py               # Settings（DATABASE_URL, JWT_SECRET, APP_PUBLIC_URL, …）
 ├── db.py                   # engine, SessionLocal, get_db
-├── deps.py                 # get_current_user, require_permission
+├── deps.py                 # get_current_user, require_permission, get_user_permissions
+├── auth_utils.py           # JWT 签发/解析、bcrypt 密码哈希
 ├── seed.py                 # permissions + role_permissions seed
 ├── models/
 │   ├── __init__.py
@@ -201,10 +202,13 @@ backend/
 │   ├── conversations.py
 │   ├── chat.py
 │   └── shared.py           # 公开分享只读
+├── services/
+│   ├── conversations.py    # get_owned_conversation 等
+│   └── llm.py              # OpenAI client 封装
 ├── alembic/
 │   └── versions/001_initial.py
 ├── alembic.ini
-└── requirements.txt        # 新增依赖
+└── requirements.txt
 ```
 
 ### 新增 Python 依赖
@@ -318,6 +322,7 @@ POSTGRES_PASSWORD=
 DATABASE_URL=postgresql://devflow:${POSTGRES_PASSWORD}@postgres:5432/devflow
 JWT_SECRET=
 JWT_EXPIRE_DAYS=7
+APP_PUBLIC_URL=https://flow.houmq.cn
 ```
 
 ### 启动顺序
@@ -340,30 +345,30 @@ postgres healthy → backend 启动 → Alembic upgrade head → seed permission
 ## 验收标准
 
 ### 账号
-- [ ] 注册（邮箱 + 密码 + 选角色）成功并自动登录
-- [ ] 登录 / 登出正常
-- [ ] token 过期或无效 → 401 → 前端跳转登录
-- [ ] `/auth/me` 返回 user + permissions
+- [x] 注册（邮箱 + 密码 + 选角色）成功并自动登录
+- [x] 登录 / 登出正常
+- [x] token 过期或无效 → 401 → 前端跳转登录
+- [x] `/auth/me` 返回 user + permissions
 
 ### 多对话
-- [ ] 新建 / 切换 / 重命名 / 删除对话
-- [ ] 流式聊天，消息持久化 DB，刷新后仍在
-- [ ] 对话列表按 updated_at 排序
-- [ ] 未登录访问 `/` → 跳转登录
+- [x] 新建 / 切换 / 重命名 / 删除对话
+- [x] 流式聊天，消息持久化 DB，刷新后仍在
+- [x] 对话列表按 updated_at 排序
+- [x] 未登录访问 `/` → 跳转登录
 
 ### 分享
-- [ ] 开启分享 → 复制链接
-- [ ] 未登录打开分享链接 → 只读查看，不能发消息
-- [ ] 关闭分享 → 旧链接 404
-- [ ] 分享页不泄露 owner 信息
+- [x] 开启分享 → 复制链接
+- [x] 未登录打开分享链接 → 只读查看，不能发消息
+- [x] 关闭分享 → 旧链接 404
+- [x] 分享页不泄露 owner 信息
 
 ### RBAC
-- [ ] 各角色 permissions 与 seed 一致
-- [ ] 无 permission 时接口返回 403（可通过测试去掉某映射验证）
+- [x] 各角色 permissions 与 seed 一致
+- [x] 无 permission 时接口返回 403（可通过测试去掉某映射验证）
 
 ### 部署
-- [ ] docker-compose 三容器本地运行
-- [ ] 云服务器 flow.houmq.cn 部署验证
+- [x] docker-compose 三容器本地运行
+- [x] 云服务器 flow.houmq.cn 部署验证
 
 ## 非目标（本规格不做）
 
