@@ -4,9 +4,16 @@ import { clearMessages, loadMessages, saveMessages } from '../lib/storage'
 import { streamChat } from '../lib/streamChat'
 import type { ChatMessage } from '../types/chat'
 
+function createId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
+}
+
 function createMessage(role: ChatMessage['role'], content: string): ChatMessage {
   return {
-    id: crypto.randomUUID(),
+    id: createId(),
     role,
     content,
     createdAt: new Date().toISOString(),
@@ -48,7 +55,7 @@ export default function ChatPage() {
     setIsLoading(true)
 
     const userMessage = createMessage('user', text)
-    const assistantId = crypto.randomUUID()
+    const assistantId = createId()
     const assistantMessage = createMessage('assistant', '')
     assistantMessage.id = assistantId
 
