@@ -45,6 +45,10 @@ class User(Base):
     conversations: Mapped[list["Conversation"]] = relationship(
         "Conversation", back_populates="user", cascade="all, delete-orphan"
     )
+    org_memberships: Mapped[list["OrgMember"]] = relationship(
+        "OrgMember", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 from models.conversation import Conversation  # noqa: E402
+from models.organization import OrgMember  # noqa: E402

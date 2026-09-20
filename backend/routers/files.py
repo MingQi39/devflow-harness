@@ -6,6 +6,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from db import get_db
@@ -13,7 +14,13 @@ from deps import require_permission
 from models.user import User
 from schemas.files import FileContentResponse, FileTreeNode, FileTreeResponse
 from services.conversations import get_owned_conversation
-from services.workspace import WorkspaceError, build_tree, ensure_workspace, read_file
+from services.workspace import (
+    WorkspaceError,
+    build_prototype_handoff_zip,
+    build_tree,
+    ensure_workspace,
+    read_file,
+)
 
 router = APIRouter(prefix="/conversations", tags=["files"])
 
@@ -47,3 +54,27 @@ def get_file_content(
             detail=str(exc),
         ) from exc
     return FileContentResponse(path=path, content=content)
+
+
+@router.get("/{conversation_id}/files/export/prototype")
+def export_prototype_handoff(
+    conversation_id: uuid.UUID,
+    user: Annotated[User, Depends(require_permission("chat:read"))],
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
+    """ZIP bundle for PM → dev handoff (prototype + requirements)."""
+    get_owned_conversation(db, user, conversation_id)
+    workspace = ensure_workspace(conversation_id)
+    try:
+        payload = build_prototype_handoff_zip(workspace)
+    except WorkspaceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    filename = f"prototype-handoff-{conversation_id}.zip"
+    return Response(
+        content=payload,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

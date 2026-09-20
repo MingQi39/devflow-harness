@@ -13,6 +13,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
     role: UserRole
+    invite_code: str | None = Field(default=None, min_length=6, max_length=32)
 
 
 class LoginRequest(BaseModel):

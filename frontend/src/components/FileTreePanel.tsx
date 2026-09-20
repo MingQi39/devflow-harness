@@ -1,13 +1,20 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import FilePreview from './FilePreview'
 import { ApiError, apiFetch } from '../lib/api'
+import { downloadPrototypeHandoff, downloadTextFile } from '../lib/downloadFile'
+import { pickPreferredFile } from '../lib/sessionStage'
 import type { FileTreeNode } from '../types/chat'
 
 interface FileTreePanelProps {
   conversationId: string | null
   refreshKey: number
-  conversationTitle: string
+  preferredPaths?: string[]
+  showBackButton?: boolean
+  showSendToDevelopers?: boolean
+  onSendToDevelopers?: () => void
   onBackToChat: () => void
+  /** PM 空状态强调生成原型；开发/测试强调实现与点测 */
+  emptyHintVariant?: 'pm' | 'dev'
 }
 
 async function friendlyLoadError(error: unknown): Promise<string> {
@@ -15,13 +22,13 @@ async function friendlyLoadError(error: unknown): Promise<string> {
     if (error.status === 404) {
       try {
         const health = await apiFetch<{ version?: string }>('/health', { auth: false })
-        if (health.version && !health.version.includes('m2')) {
+        if (health.version && !health.version.includes('m3') && !health.version.includes('m2')) {
           return `后端仍是 ${health.version}，需要重启 backend 才能加载项目文件`
         }
       } catch {
         // ignore health check failure
       }
-      return '文件列表接口不可用，请确认 backend 已重启到 M2'
+      return '文件列表接口不可用，请确认 backend 已重启到 M3'
     }
     if (error.status === 401 || error.status === 403) {
       return '没有权限查看该对话的文件'
@@ -98,41 +105,62 @@ function TreeNode({
 export default function FileTreePanel({
   conversationId,
   refreshKey,
-  conversationTitle,
+  preferredPaths = [],
+  showBackButton = false,
+  showSendToDevelopers = false,
+  onSendToDevelopers,
   onBackToChat,
+  emptyHintVariant = 'pm',
 }: FileTreePanelProps) {
   const [tree, setTree] = useState<FileTreeNode[]>([])
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
+  const [loadedPath, setLoadedPath] = useState<string | null>(null)
   const [previewContent, setPreviewContent] = useState<string | null>(null)
+  const [exportError, setExportError] = useState<string | null>(null)
+  const [exporting, setExporting] = useState(false)
+  const fileLoadSeqRef = useRef(0)
 
   const loadFileContent = useCallback(
     async (path: string) => {
       if (!conversationId) return
+      const seq = ++fileLoadSeqRef.current
       setSelectedPath(path)
+      setLoadedPath(null)
+      setPreviewContent(null)
       setPreviewError(null)
       try {
         const data = await apiFetch<{ path: string; content: string }>(
           `/conversations/${conversationId}/files/content?path=${encodeURIComponent(path)}`,
         )
+        if (seq !== fileLoadSeqRef.current) return
         setPreviewContent(data.content)
+        setLoadedPath(path)
       } catch (err) {
+        if (seq !== fileLoadSeqRef.current) return
         setPreviewError(err instanceof Error ? err.message : '读取文件失败')
         setPreviewContent(null)
+        setLoadedPath(null)
       }
     },
     [conversationId],
   )
 
+  const clearPreview = useCallback(() => {
+    fileLoadSeqRef.current += 1
+    setSelectedPath(null)
+    setLoadedPath(null)
+    setPreviewContent(null)
+    setPreviewError(null)
+  }, [])
+
   const loadTree = useCallback(async () => {
     if (!conversationId) {
       setTree([])
-      setSelectedPath(null)
-      setPreviewContent(null)
+      clearPreview()
       setLoadError(null)
-      setPreviewError(null)
       return []
     }
     setLoading(true)
@@ -146,34 +174,68 @@ export default function FileTreePanel({
     } catch (err) {
       setLoadError(await friendlyLoadError(err))
       setTree([])
+      clearPreview()
       return []
     } finally {
       setLoading(false)
     }
-  }, [conversationId])
+  }, [conversationId, clearPreview])
+
+  const preferredKey = preferredPaths.join('|')
 
   useEffect(() => {
+    clearPreview()
+  }, [conversationId, clearPreview])
+
+  useEffect(() => {
+    let cancelled = false
     void (async () => {
       const nextTree = await loadTree()
-      if (!nextTree || nextTree.length === 0) return
-
-      const files = flattenFiles(nextTree)
-      if (files.length === 0) return
-
-      const keepCurrent = selectedPath && files.some((file) => file.path === selectedPath)
-      if (keepCurrent && selectedPath) {
-        await loadFileContent(selectedPath)
+      if (cancelled) return
+      if (!nextTree || nextTree.length === 0) {
+        clearPreview()
         return
       }
 
-      const preferred =
-        files.find((file) => /\.html?$/i.test(file.path)) ?? files[0]
-      await loadFileContent(preferred.path)
+      const files = flattenFiles(nextTree)
+      if (files.length === 0) {
+        clearPreview()
+        return
+      }
+
+      const paths = files.map((file) => file.path)
+      const preferred = pickPreferredFile(paths, preferredPaths)
+      const nextPath = preferred ?? paths[0]
+      if (nextPath) await loadFileContent(nextPath)
     })()
-  }, [loadTree, refreshKey])
+    return () => {
+      cancelled = true
+    }
+    // preferredPaths encoded in preferredKey to avoid unstable array reference
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- preferredKey tracks preferredPaths
+  }, [loadTree, refreshKey, preferredKey, clearPreview, loadFileContent])
 
   const showEmpty = !loading && !loadError && tree.length === 0
   const fileCount = flattenFiles(tree).length
+  const hasPrototype = flattenFiles(tree).some((file) => file.path === 'prototype.html')
+
+  const handleExportHandoff = async () => {
+    if (!conversationId) return
+    setExportError(null)
+    setExporting(true)
+    try {
+      await downloadPrototypeHandoff(conversationId)
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : '导出失败')
+    } finally {
+      setExporting(false)
+    }
+  }
+  const previewReady =
+    selectedPath !== null &&
+    loadedPath === selectedPath &&
+    previewContent !== null
+  const previewLoading = selectedPath !== null && !previewReady && !previewError
 
   return (
     <section className="workspace-shell" aria-label="项目工作区">
@@ -227,7 +289,9 @@ export default function FileTreePanel({
               </div>
               <p className="file-tree-empty-title">还没有项目文件</p>
               <p className="file-tree-empty-hint">
-                在对话里描述需求，Agent 会在这里创建和修改文件
+                {emptyHintVariant === 'pm'
+                  ? '对话里说「做一个待办列表」，Agent 会在这里生成原型和页面'
+                  : '进入开发阶段后 Agent 会协助生成 index.html；也可在对话里说明改动，在此预览点测'}
               </p>
             </div>
           ) : null}
@@ -251,22 +315,72 @@ export default function FileTreePanel({
       <div className="workspace-main">
         <header className="workspace-main-header">
           <div className="workspace-main-title">
-            <h3>{conversationTitle}</h3>
-            <p>项目文件 · 预览与代码可切换查看</p>
+            <h3>预览</h3>
+            <p>HTML 可在 iframe 里直接点测</p>
           </div>
-          <button
-            type="button"
-            className="btn secondary sm"
-            onClick={onBackToChat}
-            title="返回对话"
-          >
-            返回对话
-          </button>
+          <div className="workspace-header-actions">
+            {showSendToDevelopers && hasPrototype ? (
+              <button
+                type="button"
+                className="btn primary sm"
+                onClick={onSendToDevelopers}
+                title="发送原型快照给组织内的开发同学"
+              >
+                发给开发
+              </button>
+            ) : null}
+            {hasPrototype && conversationId ? (
+              <button
+                type="button"
+                className="btn secondary sm"
+                disabled={exporting}
+                onClick={() => void handleExportHandoff()}
+                title="ZIP：prototype.html + REQUIREMENTS.md"
+              >
+                {exporting ? '导出中…' : '导出交付包'}
+              </button>
+            ) : null}
+            {showBackButton ? (
+              <button
+                type="button"
+                className="btn secondary sm workspace-back-btn"
+                onClick={onBackToChat}
+                title="返回对话"
+              >
+                返回对话
+              </button>
+            ) : null}
+          </div>
         </header>
+        {exportError ? <p className="workspace-export-error">{exportError}</p> : null}
 
         <div className="workspace-main-body">
-          {selectedPath && previewContent !== null ? (
-            <FilePreview path={selectedPath} content={previewContent} />
+          {previewReady ? (
+            <FilePreview
+              key={selectedPath}
+              path={selectedPath}
+              content={previewContent}
+              onDownloadCurrent={
+                selectedPath === 'prototype.html'
+                  ? () =>
+                      downloadTextFile(
+                        'prototype.html',
+                        previewContent,
+                        'text/html;charset=utf-8',
+                      )
+                  : undefined
+              }
+              onDownloadHandoff={
+                hasPrototype && conversationId
+                  ? () => void handleExportHandoff()
+                  : undefined
+              }
+            />
+          ) : previewLoading ? (
+            <div className="file-tree-status workspace-preview-loading">
+              <span className="file-tree-status-dot" aria-hidden="true" />
+              加载 {selectedPath}…
+            </div>
           ) : (
             <div className="workspace-preview-placeholder">
               <div className="workspace-preview-placeholder-icon" aria-hidden="true">

@@ -1,5 +1,9 @@
 import { FormEvent, useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import ConfirmDialog from './ConfirmDialog'
+import OrganizationSwitcher from './OrganizationSwitcher'
+import { useInboxUnread } from '../hooks/useInboxUnread'
+import { STAGE_LABELS } from '../lib/sessionStage'
 import { ROLE_LABELS } from '../types/auth'
 import type { User } from '../types/auth'
 import type { Conversation } from '../types/chat'
@@ -8,6 +12,10 @@ interface ConversationSidebarProps {
   conversations: Conversation[]
   activeId: string | null
   user: User | null
+  permissions?: string[]
+  navActive?: 'chat' | 'contacts' | 'inbox' | 'sent'
+  /** 联系人 / 收件箱等页面不展示对话列表，避免与主区内容混淆 */
+  showConversations?: boolean
   onSelect: (id: string) => void
   onCreate: () => void
   onDelete: (id: string) => void
@@ -32,12 +40,18 @@ export default function ConversationSidebar({
   conversations,
   activeId,
   user,
+  permissions = [],
+  navActive = 'chat',
+  showConversations = true,
   onSelect,
   onCreate,
   onDelete,
   onRename,
   onLogout,
 }: ConversationSidebarProps) {
+  const canInbox = permissions.includes('prototype:receive')
+  const canSent = permissions.includes('prototype:send')
+  const { unreadCount } = useInboxUnread()
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
   const deleteTarget = conversations.find((item) => item.id === deleteTargetId) ?? null
 
@@ -48,31 +62,77 @@ export default function ConversationSidebar({
         <span className="sidebar-brand-text">DevFlow Harness</span>
       </div>
 
-      <div className="sidebar-section-label">对话列表</div>
-      <div className="sidebar-header">
-        <h2>{conversations.length} 个对话</h2>
-        <button type="button" className="sidebar-new-btn" onClick={onCreate}>
-          <IconPlus />
-          新建
-        </button>
-      </div>
+      <OrganizationSwitcher />
 
-      <ul className="conversation-list custom-scrollbar">
-        {conversations.length === 0 ? (
-          <li className="conversation-empty">暂无对话</li>
-        ) : (
-          conversations.map((conversation) => (
-            <ConversationRow
-              key={conversation.id}
-              conversation={conversation}
-              isActive={activeId === conversation.id}
-              onSelect={() => onSelect(conversation.id)}
-              onDelete={() => setDeleteTargetId(conversation.id)}
-              onRename={(title) => onRename(conversation.id, title)}
-            />
-          ))
-        )}
-      </ul>
+      <nav className="sidebar-nav" aria-label="主导航">
+        <Link
+          to="/"
+          className={`sidebar-nav-link${navActive === 'chat' ? ' active' : ''}`}
+        >
+          对话
+        </Link>
+        <Link
+          to="/contacts"
+          className={`sidebar-nav-link${navActive === 'contacts' ? ' active' : ''}`}
+        >
+          联系人
+        </Link>
+        {canInbox ? (
+          <Link
+            to="/inbox"
+            className={`sidebar-nav-link${navActive === 'inbox' ? ' active' : ''}`}
+          >
+            原型收件箱
+            {unreadCount > 0 ? (
+              <span className="sidebar-nav-badge">{unreadCount > 99 ? '99+' : unreadCount}</span>
+            ) : null}
+          </Link>
+        ) : null}
+        {!canInbox && canSent ? (
+          <Link
+            to="/inbox"
+            className={`sidebar-nav-link${navActive === 'sent' ? ' active' : ''}`}
+          >
+            已发原型
+          </Link>
+        ) : null}
+      </nav>
+
+      {showConversations ? (
+        <>
+          <div className="sidebar-section-label">对话列表</div>
+          <div className="sidebar-header">
+            <h2>{conversations.length} 个对话</h2>
+            <button type="button" className="sidebar-new-btn" onClick={onCreate}>
+              <IconPlus />
+              新建
+            </button>
+          </div>
+
+          <ul className="conversation-list custom-scrollbar">
+            {conversations.length === 0 ? (
+              <li className="conversation-empty">暂无对话</li>
+            ) : (
+              conversations.map((conversation) => (
+                <ConversationRow
+                  key={conversation.id}
+                  conversation={conversation}
+                  isActive={activeId === conversation.id}
+                  onSelect={() => onSelect(conversation.id)}
+                  onDelete={() => setDeleteTargetId(conversation.id)}
+                  onRename={(title) => onRename(conversation.id, title)}
+                />
+              ))
+            )}
+          </ul>
+        </>
+      ) : (
+        <div className="sidebar-compact-hint">
+          <Link to="/" className="sidebar-back-link">
+            返回对话工作台
+          </Link>
+        </div>
+      )}
 
       {user ? (
         <div className="sidebar-footer">
@@ -182,7 +242,10 @@ function ConversationRow({
       ) : (
         <button type="button" className="conversation-select" onClick={onSelect}>
           <span className="conversation-title">{conversation.title}</span>
-          <span className="conversation-time">{formatRelativeTime(conversation.updatedAt)}</span>
+          <span className="conversation-time">
+            <span className="conversation-stage">{STAGE_LABELS[conversation.stage]}</span>
+            {formatRelativeTime(conversation.updatedAt)}
+          </span>
         </button>
       )}
       <div className="conversation-actions">

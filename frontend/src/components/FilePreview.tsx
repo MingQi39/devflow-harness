@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react'
 interface FilePreviewProps {
   path: string
   content: string
+  onDownloadCurrent?: () => void
+  onDownloadHandoff?: () => void
 }
 
 type PreviewMode = 'preview' | 'code'
@@ -21,8 +23,14 @@ function fileLanguage(path: string): string {
   return 'text'
 }
 
-export default function FilePreview({ path, content }: FilePreviewProps) {
+export default function FilePreview({
+  path,
+  content,
+  onDownloadCurrent,
+  onDownloadHandoff,
+}: FilePreviewProps) {
   const previewable = isHtmlFile(path)
+  const isPrototype = path === 'prototype.html'
   const [mode, setMode] = useState<PreviewMode>(previewable ? 'preview' : 'code')
 
   useEffect(() => {
@@ -38,30 +46,55 @@ export default function FilePreview({ path, content }: FilePreviewProps) {
         <span className="file-preview-path" title={path}>
           {path}
         </span>
-        {previewable ? (
-          <div className="file-preview-tabs" role="tablist" aria-label="预览模式">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === 'preview'}
-              className={mode === 'preview' ? 'active' : ''}
-              onClick={() => setMode('preview')}
-            >
-              预览
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === 'code'}
-              className={mode === 'code' ? 'active' : ''}
-              onClick={() => setMode('code')}
-            >
-              代码
-            </button>
-          </div>
-        ) : (
-          <span className="file-preview-lang">{language}</span>
-        )}
+        <div className="file-preview-toolbar-actions">
+          {isPrototype && !isEmpty ? (
+            <>
+              {onDownloadCurrent ? (
+                <button
+                  type="button"
+                  className="btn ghost sm file-preview-export-btn"
+                  onClick={onDownloadCurrent}
+                >
+                  下载 HTML
+                </button>
+              ) : null}
+              {onDownloadHandoff ? (
+                <button
+                  type="button"
+                  className="btn secondary sm file-preview-export-btn"
+                  onClick={onDownloadHandoff}
+                  title="含 prototype.html、REQUIREMENTS.md 与说明"
+                >
+                  导出交付包
+                </button>
+              ) : null}
+            </>
+          ) : null}
+          {previewable ? (
+            <div className="file-preview-tabs" role="tablist" aria-label="预览模式">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === 'preview'}
+                className={mode === 'preview' ? 'active' : ''}
+                onClick={() => setMode('preview')}
+              >
+                预览
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === 'code'}
+                className={mode === 'code' ? 'active' : ''}
+                onClick={() => setMode('code')}
+              >
+                代码
+              </button>
+            </div>
+          ) : (
+            <span className="file-preview-lang">{language}</span>
+          )}
+        </div>
       </div>
 
       {mode === 'preview' && previewable ? (
@@ -70,6 +103,7 @@ export default function FilePreview({ path, content }: FilePreviewProps) {
             <div className="file-preview-empty">文件为空，暂无可预览内容</div>
           ) : (
             <iframe
+              key={`${path}:${content.length}`}
               className="file-preview-frame"
               title={`预览 ${path}`}
               sandbox="allow-scripts allow-modals"

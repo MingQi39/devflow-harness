@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import io
 import shutil
 import uuid
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +62,38 @@ def read_file(workspace: Path, relative_path: str) -> str:
     if not target.is_file():
         raise WorkspaceError(f"Not a file: {relative_path}")
     return target.read_text(encoding="utf-8")
+
+
+PROTOTYPE_HANDOFF_FILES: tuple[str, ...] = ("prototype.html", "REQUIREMENTS.md")
+
+HANDOFF_README = """DevFlow Harness — 原型交付包
+
+- prototype.html：可双击在浏览器打开的可点击原型
+- REQUIREMENTS.md：需求说明
+
+开发同学请据此实现 index.html，勿覆盖本包内的 prototype.html。
+"""
+
+
+def build_prototype_handoff_zip(workspace: Path) -> bytes:
+    """Zip prototype.html (required) and REQUIREMENTS.md when present."""
+    try:
+        prototype_content = read_file(workspace, "prototype.html")
+    except WorkspaceError as exc:
+        raise WorkspaceError("prototype.html not found in workspace") from exc
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("prototype.html", prototype_content)
+        for name in PROTOTYPE_HANDOFF_FILES:
+            if name == "prototype.html":
+                continue
+            try:
+                archive.writestr(name, read_file(workspace, name))
+            except WorkspaceError:
+                continue
+        archive.writestr("README.txt", HANDOFF_README)
+    return buffer.getvalue()
 
 
 def write_file(workspace: Path, relative_path: str, content: str) -> None:

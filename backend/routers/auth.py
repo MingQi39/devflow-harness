@@ -11,6 +11,7 @@ from auth_utils import create_access_token, hash_password, verify_password
 from db import get_db
 from deps import get_current_user, get_user_permissions
 from models.user import User
+from services.organizations import find_organization_by_invite, join_organization_by_invite
 from schemas.auth import AuthResponse, LoginRequest, MeResponse, RegisterRequest, UserOut
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -38,6 +39,12 @@ def register(
             detail="Email already registered",
         )
 
+    if body.invite_code and find_organization_by_invite(db, body.invite_code) is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invite code not found or invalid",
+        )
+
     user = User(
         email=body.email.lower(),
         password_hash=hash_password(body.password),
@@ -46,6 +53,8 @@ def register(
     db.add(user)
     db.commit()
     db.refresh(user)
+    if body.invite_code:
+        join_organization_by_invite(db, user, body.invite_code)
     return _auth_response(db, user)
 
 

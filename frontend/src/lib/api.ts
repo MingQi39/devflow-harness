@@ -63,7 +63,11 @@ export async function apiFetch<T>(
     } catch {
       // keep raw text
     }
-    throw new ApiError(response.status, detail || `Request failed: ${response.status}`)
+    const friendly =
+      response.status === 403 && detail === 'Permission denied'
+        ? '当前账号没有此操作权限'
+        : detail || `Request failed: ${response.status}`
+    throw new ApiError(response.status, friendly)
   }
 
   if (response.status === 204) {

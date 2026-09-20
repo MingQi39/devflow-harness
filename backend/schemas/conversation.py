@@ -9,6 +9,7 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 from models.message import MessageRole
+from services.session_stage import SessionStage
 
 
 class ConversationCreate(BaseModel):
@@ -19,9 +20,14 @@ class ConversationUpdate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
 
 
+class ConversationStageUpdate(BaseModel):
+    stage: SessionStage
+
+
 class ConversationOut(BaseModel):
     id: uuid.UUID
     title: str
+    stage: SessionStage
     share_token: Optional[str]
     shared_at: Optional[datetime]
     created_at: datetime

@@ -16,22 +16,8 @@ from db import SessionLocal
 from models.conversation import Conversation
 from models.message import Message, MessageRole
 from services.agent_tools import TOOL_DEFINITIONS, execute_tool
+from services.session_stage import SessionStage, build_system_prompt
 from services.workspace import ensure_workspace
-
-SYSTEM_PROMPT = (
-    "You are DevFlow Harness, an AI assistant embedded in a project session workspace. "
-    "Language: match the user's language. Reply in the same language as the user's latest "
-    "message (Chinese → Chinese, English → English, etc.). If the latest message mixes "
-    "languages, use its dominant language. If still unclear, follow the language of recent "
-    "user messages in this session. Do not switch languages unless the user does. "
-    "Code, file paths, and technical identifiers may stay in English when appropriate. "
-    "You MUST use tools to read and write project files. "
-    "When the user asks to create, save, or modify a file, call write_file immediately — "
-    "do NOT paste the full file in chat instead of saving it. "
-    "When you need existing file contents, call read_file. "
-    "Paths are relative to the session root (e.g. index.html, src/app.js). "
-    "After write_file succeeds, briefly summarize what you changed in the user's language."
-)
 
 ShouldStop = Callable[[], bool]
 
@@ -117,10 +103,13 @@ def run_agent_loop(
     history: list[Message],
     user_message: str,
     should_stop: ShouldStop,
+    stage: SessionStage = SessionStage.requirement,
 ) -> Iterator[dict[str, Any]]:
     settings = get_settings()
     workspace = ensure_workspace(conversation_id)
-    api_messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    api_messages: list[dict[str, Any]] = [
+        {"role": "system", "content": build_system_prompt(stage)}
+    ]
     api_messages.extend(build_api_messages(history))
     api_messages.append({"role": "user", "content": user_message})
 
@@ -305,6 +294,7 @@ def stream_agent_events(
     history: list[Message],
     user_message: str,
     should_stop: ShouldStop,
+    stage: SessionStage = SessionStage.requirement,
 ) -> Iterator[str]:
     for event in run_agent_loop(
         client=client,
@@ -313,6 +303,7 @@ def stream_agent_events(
         history=history,
         user_message=user_message,
         should_stop=should_stop,
+        stage=stage,
     ):
         yield sse_encode(event)
     yield "data: [DONE]\n\n"

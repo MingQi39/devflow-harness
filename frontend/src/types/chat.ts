@@ -1,3 +1,5 @@
+import type { SessionStage } from '../lib/sessionStage'
+
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool'
 
 export interface ToolCallInfo {
@@ -20,6 +22,7 @@ export interface ChatMessage {
 export interface Conversation {
   id: string
   title: string
+  stage: SessionStage
   shareToken: string | null
   sharedAt: string | null
   createdAt: string

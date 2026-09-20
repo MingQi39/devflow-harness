@@ -12,6 +12,7 @@ export default function RegisterPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [role, setRole] = useState<UserRole>('pm')
+  const [inviteCode, setInviteCode] = useState('DEVFLOW1')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -29,7 +30,7 @@ export default function RegisterPage() {
     setSubmitting(true)
     try {
       const trimmedEmail = email.trim()
-      await register(trimmedEmail, password, role)
+      await register(trimmedEmail, password, role, inviteCode)
       saveLastEmail(trimmedEmail)
       navigate('/')
     } catch (err) {
@@ -74,6 +75,16 @@ export default function RegisterPage() {
                 minLength={8}
                 required
                 autoComplete="new-password"
+              />
+            </label>
+            <label>
+              组织邀请码
+              <input
+                value={inviteCode}
+                onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+                placeholder="DEVFLOW1"
+                minLength={6}
+                autoComplete="off"
               />
             </label>
             <div>

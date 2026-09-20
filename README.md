@@ -2,13 +2,15 @@
 
 PM / 前后端 / QA 共用的研发工作台。参考 [Pi Agent](https://github.com/earendil-works/pi) 的 Session + Tools，以及 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的插件化扩展；内核是 Python Harness，界面是 React 工作台。一条需求从发起到提测都在平台内完成，不是 IDE 插件。
 
-> 当前版本：**M2 — Session 工作区 + Agent Loop + 读/写文件**
+> 当前版本：**M3 — 全角色最小闭环（待办 Demo）**
 
 **线上 Demo：** http://flow.houmq.cn/
 
 ## 当前能力
 
 - **账号体系**：注册 / 登录 / 登出，JWT（7 天），注册时选择角色（PM / 前端 / 后端 / QA）
+- **Session 阶段机**：需求 → 原型 → 开发 → 提测 → 已提测，同一条 Session 内推进
+- **待办 Demo 闭环**：对话生成 `prototype.html` / `index.html`，左侧 iframe 可勾选待办
 - **Session 工作区**：一个需求 = 一个 Session，独立项目目录 + 文件树
 - **Agent Loop**：模型多轮调用 `read_file` / `write_file`，SSE 穿插 tool call / result 事件
 - **多 Session**：侧边栏管理，消息与工作区持久化 PostgreSQL + 磁盘，刷新不丢
@@ -176,7 +178,7 @@ chmod +x scripts/docker-deploy.sh
 | **M1** | 对话通道：Harness 骨架 + SSE + Docker ✅ |
 | **M1.5** | 用户体系 + 多对话 + 分享 + PostgreSQL ✅ |
 | **M2** | Session 工作区 + Agent Loop + 读/写文件 ✅ |
-| M3 | 全角色最小闭环（待办 Demo：需求 → 原型 → 预览 → iframe 点测） |
+| **M3** | 全角色最小闭环（待办 Demo：需求 → 原型 → 预览 → iframe 点测） |
 | M4 | Dev 工作台完善：真实预览运行时 + 调试 |
 | M5 | 后端运行时 + 平台内数据库浏览/查询 |
 | M6 | PM 完善：PRD、多页原型、评审批注与门禁 |

@@ -19,6 +19,7 @@ from models.user import User
 from schemas.conversation import (
     ConversationCreate,
     ConversationOut,
+    ConversationStageUpdate,
     ConversationUpdate,
     MessageOut,
     MessagesResponse,
@@ -26,6 +27,7 @@ from schemas.conversation import (
     ShareStatusResponse,
 )
 from services.conversations import get_owned_conversation
+from services.session_stage import StageError, transition_session_stage
 from services.workspace import ensure_workspace, remove_workspace
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
@@ -75,6 +77,39 @@ def update_conversation(
 ) -> Conversation:
     conversation = get_owned_conversation(db, user, conversation_id)
     conversation.title = body.title
+    db.commit()
+    db.refresh(conversation)
+    return conversation
+
+
+@router.patch("/{conversation_id}/stage", response_model=ConversationOut)
+def update_conversation_stage(
+    conversation_id: uuid.UUID,
+    body: ConversationStageUpdate,
+    user: Annotated[User, Depends(require_permission("conversation:manage"))],
+    db: Annotated[Session, Depends(get_db)],
+) -> Conversation:
+    conversation = get_owned_conversation(db, user, conversation_id)
+    user_messages = (
+        db.query(Message)
+        .filter(
+            Message.conversation_id == conversation_id,
+            Message.role == "user",
+        )
+        .order_by(Message.created_at.asc())
+        .all()
+    )
+    workspace = ensure_workspace(conversation_id)
+    try:
+        conversation.stage = transition_session_stage(
+            conversation.stage,
+            body.stage,
+            role=user.role.value,
+            workspace=workspace,
+            user_message_bodies=[m.content for m in user_messages],
+        )
+    except StageError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     db.commit()
     db.refresh(conversation)
     return conversation

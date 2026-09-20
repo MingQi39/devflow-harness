@@ -1,9 +1,14 @@
-import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import ChatMessageRow from '../components/ChatMessageRow'
 import ConversationSidebar from '../components/ConversationSidebar'
 import FileTreePanel from '../components/FileTreePanel'
 import ShareButton from '../components/ShareButton'
+import JoinOrgBanner from '../components/JoinOrgBanner'
+import SendPrototypeDialog from '../components/SendPrototypeDialog'
+import StageBar from '../components/StageBar'
+import { useOrg } from '../contexts/OrgContext'
+import { useOrgContacts } from '../hooks/useOrgContacts'
 import { useAuth } from '../contexts/AuthContext'
 import { apiFetch } from '../lib/api'
 import { chatPath, isFilesView } from '../lib/chatRoutes'
@@ -12,8 +17,34 @@ import {
   shouldSubmitComposerOnEnter,
 } from '../lib/composerKeyboard'
 import { mapConversation, mapMessage } from '../lib/mappers'
+import {
+  chatWelcomeForRole,
+  composerPlaceholder,
+  roleBuildsPrototypeInSession,
+  roleCanOpenSessionWorkspace,
+  stageKickoffMessage,
+} from '../lib/stageRoles'
+import {
+  STAGE_LABELS,
+  STAGE_ORDER,
+  preferredPreviewFiles,
+  type SessionStage,
+} from '../lib/sessionStage'
+import { stageAdvanceBlockedReason } from '../lib/stageReadiness'
 import { streamChat } from '../lib/streamChat'
-import type { ChatMessage, Conversation } from '../types/chat'
+import type { ChatMessage, Conversation, FileTreeNode } from '../types/chat'
+
+function flattenFilePaths(nodes: FileTreeNode[]): string[] {
+  const paths: string[] = []
+  const walk = (list: FileTreeNode[]) => {
+    for (const node of list) {
+      if (node.type === 'file') paths.push(node.path)
+      if (node.children?.length) walk(node.children)
+    }
+  }
+  walk(nodes)
+  return paths
+}
 
 function createId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -23,12 +54,14 @@ function createId(): string {
 }
 
 export default function ChatPage() {
-  const { user, logout } = useAuth()
+  const { user, permissions, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const { conversationId } = useParams<{ conversationId?: string }>()
   const activeId = conversationId ?? null
   const workspaceOpen = isFilesView(location.pathname)
+  const userRole = user?.role ?? 'pm'
+  const showEmbeddedWorkspace = roleBuildsPrototypeInSession(userRole)
 
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -37,6 +70,12 @@ export default function ChatPage() {
   const [bootLoading, setBootLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [fileTreeRefreshKey, setFileTreeRefreshKey] = useState(0)
+  const [stageAdvancing, setStageAdvancing] = useState(false)
+  const [workspaceFilePaths, setWorkspaceFilePaths] = useState<string[]>([])
+  const [sendPrototypeOpen, setSendPrototypeOpen] = useState(false)
+  const [sendToast, setSendToast] = useState<string | null>(null)
+  const { currentOrgId } = useOrg()
+  const { devMembers } = useOrgContacts()
   const abortRef = useRef<AbortController | null>(null)
   const chatBodyRef = useRef<HTMLDivElement | null>(null)
   const pinnedToBottomRef = useRef(true)
@@ -113,6 +152,18 @@ export default function ChatPage() {
     }
   }, [bootLoading, conversationId, conversations, navigate])
 
+  const activeStage = activeConversation?.stage ?? 'requirement'
+  const canOpenSessionWorkspace = roleCanOpenSessionWorkspace(userRole, activeStage)
+  const showWorkspacePanel = Boolean(
+    activeId && canOpenSessionWorkspace && (showEmbeddedWorkspace || workspaceOpen),
+  )
+  const chatWelcome = chatWelcomeForRole(userRole, activeStage)
+
+  useEffect(() => {
+    if (!activeId || !workspaceOpen || canOpenSessionWorkspace) return
+    navigate(chatPath(activeId, 'chat'), { replace: true })
+  }, [activeId, workspaceOpen, canOpenSessionWorkspace, navigate])
+
   useEffect(() => {
     if (!activeId || bootLoading) return
 
@@ -143,6 +194,27 @@ export default function ChatPage() {
       setIsLoading(false)
     }
   }, [activeId, bootLoading])
+
+  useEffect(() => {
+    if (!activeId) {
+      setWorkspaceFilePaths([])
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const data = await apiFetch<{ tree: FileTreeNode[] }>(
+          `/conversations/${activeId}/files`,
+        )
+        if (!cancelled) setWorkspaceFilePaths(flattenFilePaths(data.tree))
+      } catch {
+        if (!cancelled) setWorkspaceFilePaths([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [activeId, fileTreeRefreshKey])
 
   const isNearBottom = useCallback((element: HTMLElement) => {
     return element.scrollHeight - element.scrollTop - element.clientHeight <= 80
@@ -236,124 +308,185 @@ export default function ChatPage() {
     )
   }
 
+  const sendUserMessage = useCallback(
+    async (text: string) => {
+      const trimmed = text.trim()
+      const submitConversationId = activeId
+      if (!trimmed || isLoading || !submitConversationId) return
+
+      setError(null)
+      setIsLoading(true)
+      messageLoadSeqRef.current += 1
+
+      pinnedToBottomRef.current = true
+
+      const now = new Date().toISOString()
+      const userMessage: ChatMessage = {
+        id: createId(),
+        role: 'user',
+        content: trimmed,
+        createdAt: now,
+      }
+      const assistantId = createId()
+      assistantIdRef.current = assistantId
+      hadToolSinceAssistantRef.current = false
+      setMessages((current) => [
+        ...current,
+        userMessage,
+        {
+          id: assistantId,
+          role: 'assistant',
+          content: '',
+          createdAt: now,
+        },
+      ])
+      requestAnimationFrame(() => scrollToBottom('smooth'))
+
+      const controller = new AbortController()
+      abortRef.current = controller
+
+      try {
+        await streamChat({
+          conversationId: submitConversationId,
+          message: trimmed,
+          signal: controller.signal,
+          onContent: (chunk) => {
+            if (activeIdRef.current !== submitConversationId) return
+            if (hadToolSinceAssistantRef.current) {
+              const nextAssistantId = createId()
+              appendAssistantMessage(nextAssistantId, new Date().toISOString())
+            }
+            const currentAssistantId = assistantIdRef.current
+            if (!currentAssistantId) return
+            setMessages((current) =>
+              current.map((item) =>
+                item.id === currentAssistantId
+                  ? { ...item, content: item.content + chunk }
+                  : item,
+              ),
+            )
+          },
+          onToolCall: ({ id, name, arguments: args }) => {
+            if (activeIdRef.current !== submitConversationId) return
+            hadToolSinceAssistantRef.current = true
+            setMessages((current) => [
+              ...current,
+              {
+                id: `tool-${id}`,
+                role: 'tool',
+                content: args,
+                toolCallId: id,
+                toolName: name,
+                createdAt: new Date().toISOString(),
+              },
+            ])
+          },
+          onToolResult: ({ id, result }) => {
+            if (activeIdRef.current !== submitConversationId) return
+            setMessages((current) =>
+              current.map((item) =>
+                item.toolCallId === id ? { ...item, content: result } : item,
+              ),
+            )
+          },
+          onFileChanged: () => {
+            if (activeIdRef.current !== submitConversationId) return
+            const stage =
+              conversations.find((item) => item.id === submitConversationId)?.stage ??
+              'requirement'
+            const role = user?.role ?? 'pm'
+            const shouldOpenFiles =
+              roleCanOpenSessionWorkspace(role, stage) &&
+              (window.matchMedia('(max-width: 768px)').matches ||
+                !roleBuildsPrototypeInSession(role))
+            if (shouldOpenFiles) {
+              navigate(chatPath(submitConversationId, 'files'))
+            }
+            setFileTreeRefreshKey((value) => value + 1)
+          },
+          onError: (message) => {
+            if (activeIdRef.current !== submitConversationId) return
+            setError(message)
+          },
+        })
+        if (activeIdRef.current !== submitConversationId) return
+        await refreshConversations()
+        await loadMessages(submitConversationId)
+        setFileTreeRefreshKey((value) => value + 1)
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          if (activeIdRef.current === submitConversationId) {
+            await loadMessages(submitConversationId)
+          }
+          return
+        }
+        const message = err instanceof Error ? err.message : 'Unknown error'
+        setError(message)
+        setMessages((current) =>
+          current.map((item) =>
+            item.id === assistantIdRef.current && !item.content
+              ? { ...item, content: `请求失败：${message}` }
+              : item,
+          ),
+        )
+      } finally {
+        abortRef.current = null
+        assistantIdRef.current = null
+        setIsLoading(false)
+      }
+    },
+    [
+      activeId,
+      conversations,
+      isLoading,
+      loadMessages,
+      navigate,
+      refreshConversations,
+      scrollToBottom,
+      user?.role,
+    ],
+  )
+
+  const handleStageChange = async (targetStage: SessionStage) => {
+    if (!activeId || isLoading || stageAdvancing) return
+    const fromIndex = STAGE_ORDER.indexOf(activeStage)
+    const toIndex = STAGE_ORDER.indexOf(targetStage)
+    setError(null)
+    setStageAdvancing(true)
+    try {
+      const updated = await apiFetch<Record<string, unknown>>(
+        `/conversations/${activeId}/stage`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ stage: targetStage }),
+        },
+      )
+      const conversation = mapConversation(updated)
+      setConversations((current) =>
+        current.map((item) => (item.id === conversation.id ? conversation : item)),
+      )
+      setFileTreeRefreshKey((value) => value + 1)
+      if (toIndex > fromIndex) {
+        const role = user?.role ?? 'pm'
+        const kickoff = stageKickoffMessage(conversation.stage, role)
+        if (kickoff) {
+          await sendUserMessage(kickoff)
+        }
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '切换阶段失败')
+    } finally {
+      setStageAdvancing(false)
+    }
+  }
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
     if (isComposingRef.current || compositionEnterLockRef.current) return
     const text = input.trim()
-    const submitConversationId = activeId
-    if (!text || isLoading || !submitConversationId) return
-
-    setError(null)
+    if (!text || isLoading || !activeId) return
     setInput('')
-    setIsLoading(true)
-    messageLoadSeqRef.current += 1
-
-    pinnedToBottomRef.current = true
-
-    const now = new Date().toISOString()
-    const userMessage: ChatMessage = {
-      id: createId(),
-      role: 'user',
-      content: text,
-      createdAt: now,
-    }
-    const assistantId = createId()
-    assistantIdRef.current = assistantId
-    hadToolSinceAssistantRef.current = false
-    setMessages((current) => [
-      ...current,
-      userMessage,
-      {
-        id: assistantId,
-        role: 'assistant',
-        content: '',
-        createdAt: now,
-      },
-    ])
-    requestAnimationFrame(() => scrollToBottom('smooth'))
-
-    const controller = new AbortController()
-    abortRef.current = controller
-
-    try {
-      await streamChat({
-        conversationId: submitConversationId,
-        message: text,
-        signal: controller.signal,
-        onContent: (chunk) => {
-          if (activeIdRef.current !== submitConversationId) return
-          if (hadToolSinceAssistantRef.current) {
-            const nextAssistantId = createId()
-            appendAssistantMessage(nextAssistantId, new Date().toISOString())
-          }
-          const currentAssistantId = assistantIdRef.current
-          if (!currentAssistantId) return
-          setMessages((current) =>
-            current.map((item) =>
-              item.id === currentAssistantId
-                ? { ...item, content: item.content + chunk }
-                : item,
-            ),
-          )
-        },
-        onToolCall: ({ id, name, arguments: args }) => {
-          if (activeIdRef.current !== submitConversationId) return
-          hadToolSinceAssistantRef.current = true
-          setMessages((current) => [
-            ...current,
-            {
-              id: `tool-${id}`,
-              role: 'tool',
-              content: args,
-              toolCallId: id,
-              toolName: name,
-              createdAt: new Date().toISOString(),
-            },
-          ])
-        },
-        onToolResult: ({ id, result }) => {
-          if (activeIdRef.current !== submitConversationId) return
-          setMessages((current) =>
-            current.map((item) =>
-              item.toolCallId === id ? { ...item, content: result } : item,
-            ),
-          )
-        },
-        onFileChanged: () => {
-          if (activeIdRef.current !== submitConversationId) return
-          navigate(chatPath(submitConversationId, 'files'))
-          setFileTreeRefreshKey((value) => value + 1)
-        },
-        onError: (message) => {
-          if (activeIdRef.current !== submitConversationId) return
-          setError(message)
-        },
-      })
-      if (activeIdRef.current !== submitConversationId) return
-      await refreshConversations()
-      await loadMessages(submitConversationId)
-      setFileTreeRefreshKey((value) => value + 1)
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        if (activeIdRef.current === submitConversationId) {
-          await loadMessages(submitConversationId)
-        }
-        return
-      }
-      const message = err instanceof Error ? err.message : 'Unknown error'
-      setError(message)
-      setMessages((current) =>
-        current.map((item) =>
-          item.id === assistantIdRef.current && !item.content
-            ? { ...item, content: `请求失败：${message}` }
-            : item,
-        ),
-      )
-    } finally {
-      abortRef.current = null
-      assistantIdRef.current = null
-      setIsLoading(false)
-    }
+    await sendUserMessage(text)
   }
 
   const handleStop = () => {
@@ -367,16 +500,40 @@ export default function ChatPage() {
     navigate('/login')
   }
 
+  const stageBlockedReason = useMemo(
+    () => stageAdvanceBlockedReason(activeStage, messages, workspaceFilePaths),
+    [activeStage, messages, workspaceFilePaths],
+  )
+
   if (bootLoading || (!conversationId && conversations.length > 0)) {
     return <div className="auth-loading">加载对话…</div>
   }
 
   return (
-    <div className="chat-app">
+    <div
+      className={`chat-app${workspaceOpen ? ' is-files-view' : ''}${
+        showEmbeddedWorkspace && !workspaceOpen ? ' has-embedded-workspace' : ''
+      }${!showWorkspacePanel && !workspaceOpen ? ' is-chat-only' : ''}`}
+    >
+      {activeId && currentOrgId ? (
+        <SendPrototypeDialog
+          open={sendPrototypeOpen}
+          orgId={currentOrgId}
+          conversationId={activeId}
+          devMembers={devMembers}
+          onClose={() => setSendPrototypeOpen(false)}
+          onSent={() => {
+            setSendToast('已发送原型，开发同学可在「原型收件箱」查看')
+            window.setTimeout(() => setSendToast(null), 4000)
+          }}
+        />
+      ) : null}
       <ConversationSidebar
         conversations={conversations}
         activeId={activeId}
         user={user}
+        permissions={permissions}
+        navActive="chat"
         onSelect={handleSelectConversation}
         onCreate={handleCreateConversation}
         onDelete={handleDeleteConversation}
@@ -384,22 +541,32 @@ export default function ChatPage() {
         onLogout={handleLogout}
       />
 
-      {workspaceOpen && activeId ? (
+      {showWorkspacePanel ? (
         <FileTreePanel
+          key={activeId}
           conversationId={activeId}
           refreshKey={fileTreeRefreshKey}
-          conversationTitle={activeConversation?.title ?? '新对话'}
-          onBackToChat={() => navigate(chatPath(activeId, 'chat'))}
+          preferredPaths={preferredPreviewFiles(activeStage)}
+          showBackButton={workspaceOpen}
+          showSendToDevelopers={
+            Boolean(activeId && currentOrgId && permissions.includes('prototype:send'))
+          }
+          onSendToDevelopers={() => setSendPrototypeOpen(true)}
+          onBackToChat={() => navigate(chatPath(activeId!, 'chat'))}
+          emptyHintVariant={showEmbeddedWorkspace ? 'pm' : 'dev'}
         />
-      ) : (
-        <div className="chat-main">
+      ) : null}
+
+      <div className="chat-main">
           <header className="chat-header">
             <div>
               <h1 className="chat-header-title">{activeConversation?.title ?? '新对话'}</h1>
-              <p className="chat-header-sub">Agent Loop · 读/写项目文件</p>
+              <p className="chat-header-sub">
+                {STAGE_LABELS[activeStage]} · 待办 Demo 闭环
+              </p>
             </div>
             <div className="header-actions">
-              {activeId ? (
+              {activeId && canOpenSessionWorkspace ? (
                 <button
                   type="button"
                   className="btn ghost sm workspace-toggle-btn"
@@ -425,6 +592,19 @@ export default function ChatPage() {
             </div>
           </header>
 
+          <JoinOrgBanner />
+          {sendToast ? <div className="toast-banner">{sendToast}</div> : null}
+
+          {activeId ? (
+            <StageBar
+              stage={activeStage}
+              role={user?.role ?? 'pm'}
+              disabled={isLoading || stageAdvancing}
+              blockedReason={stageBlockedReason}
+              onStageChange={(stage) => void handleStageChange(stage)}
+            />
+          ) : null}
+
           <div
             ref={chatBodyRef}
             className="chat-body custom-scrollbar"
@@ -434,10 +614,17 @@ export default function ChatPage() {
               {messages.length === 0 ? (
                 <div className="empty-state">
                   <img src="/favicon.png" alt="" width={56} height={56} className="empty-state-logo" />
-                  <p className="empty-state-title">开始一段对话</p>
-                  <p className="empty-state-sub">
-                    例如：「创建一个 index.html，写一个简单的待办列表页面」
-                  </p>
+                  <p className="empty-state-title">{chatWelcome.title}</p>
+                  <p className="empty-state-sub">{chatWelcome.sub}</p>
+                  {chatWelcome.demoPrompt ? (
+                    <button
+                      type="button"
+                      className="demo-prompt-chip"
+                      onClick={() => setInput(chatWelcome.demoPrompt!)}
+                    >
+                      {chatWelcome.demoPrompt}
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -465,7 +652,7 @@ export default function ChatPage() {
               <textarea
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
-                placeholder="描述需求或让 Agent 修改项目文件…（Enter 发送，Shift+Enter 换行）"
+                placeholder={composerPlaceholder(activeStage, user?.role ?? 'pm')}
                 rows={1}
                 disabled={isLoading || !activeId}
                 onCompositionStart={() => {
@@ -492,7 +679,6 @@ export default function ChatPage() {
             </form>
           </div>
         </div>
-      )}
     </div>
   )
 }

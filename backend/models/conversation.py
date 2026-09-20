@@ -6,11 +6,12 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy import DateTime, Enum, ForeignKey, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db import Base
+from services.session_stage import SessionStage
 
 
 class Conversation(Base):
@@ -26,6 +27,12 @@ class Conversation(Base):
         index=True,
     )
     title: Mapped[str] = mapped_column(String(200), nullable=False, default="新对话")
+    stage: Mapped[SessionStage] = mapped_column(
+        Enum(SessionStage, name="session_stage", native_enum=True),
+        nullable=False,
+        default=SessionStage.requirement,
+        server_default=SessionStage.requirement.value,
+    )
     share_token: Mapped[Optional[str]] = mapped_column(
         String(64), unique=True, nullable=True, index=True
     )

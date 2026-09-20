@@ -13,8 +13,8 @@ export interface AuthResponse {
 }
 
 export const ROLE_LABELS: Record<UserRole, string> = {
-  pm: 'PM',
+  pm: '产品',
   frontend: '前端',
   backend: '后端',
-  qa: 'QA',
+  qa: '测试',
 }

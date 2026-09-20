@@ -36,6 +36,7 @@ def chat_stream(
     )
 
     conversation_id = conversation.id
+    conversation_stage = conversation.stage
     user_message_text = body.message
     persist_user_message(conversation_id, user_message_text)
 
@@ -54,6 +55,7 @@ def chat_stream(
                 history=history,
                 user_message=user_message_text,
                 should_stop=lambda: False,
+                stage=conversation_stage,
             )
         except GeneratorExit:
             return
