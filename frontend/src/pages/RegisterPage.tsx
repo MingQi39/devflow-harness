@@ -1,6 +1,7 @@
 import { FormEvent, useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { chatHomePath } from '../lib/lastConversation'
 import { saveLastEmail } from '../lib/rememberLogin'
 import { ROLE_LABELS, type UserRole } from '../types/auth'
 
@@ -21,7 +22,7 @@ export default function RegisterPage() {
   }
 
   if (isAuthenticated) {
-    return <Navigate to="/" replace />
+    return <Navigate to={chatHomePath()} replace />
   }
 
   const handleSubmit = async (event: FormEvent) => {
@@ -32,7 +33,7 @@ export default function RegisterPage() {
       const trimmedEmail = email.trim()
       await register(trimmedEmail, password, role, inviteCode)
       saveLastEmail(trimmedEmail)
-      navigate('/')
+      navigate(chatHomePath())
     } catch (err) {
       setError(err instanceof Error ? err.message : '注册失败')
     } finally {

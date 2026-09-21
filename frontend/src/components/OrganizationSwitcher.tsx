@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useOrg } from '../contexts/OrgContext'
 import CreateOrganizationDialog from './CreateOrganizationDialog'
 import JoinOrganizationDialog from './JoinOrganizationDialog'
+import { IconBuilding2, IconChevronDown, IconPlus, IconUserPlus } from './icons/LayoutIcons'
 
 export default function OrganizationSwitcher() {
   const {
@@ -45,7 +46,11 @@ export default function OrganizationSwitcher() {
         onClick={() => setMenuOpen((open) => !open)}
       >
         <span className="org-switcher-avatar" aria-hidden="true">
-          {initial}
+          {currentOrg || orgs.length > 0 ? (
+            initial
+          ) : (
+            <IconBuilding2 size={18} />
+          )}
         </span>
         <span className="org-switcher-label">
           <span className="org-switcher-name">{label}</span>
@@ -58,7 +63,7 @@ export default function OrganizationSwitcher() {
           )}
         </span>
         <span className="org-switcher-chevron" aria-hidden="true">
-          {menuOpen ? '▴' : '▾'}
+          <IconChevronDown size={14} className={menuOpen ? 'org-switcher-chevron-open' : ''} />
         </span>
       </button>
 
@@ -80,6 +85,9 @@ export default function OrganizationSwitcher() {
                       setMenuOpen(false)
                     }}
                   >
+                    <span className="org-switcher-item-avatar" aria-hidden>
+                      {org.name.trim().charAt(0) || '组'}
+                    </span>
                     <span className="org-switcher-item-name">{org.name}</span>
                     <span className="org-switcher-item-meta">
                       {org.member_count} 人
@@ -94,23 +102,25 @@ export default function OrganizationSwitcher() {
           <div className="org-switcher-actions">
             <button
               type="button"
-              className="btn ghost sm full-width"
+              className="btn ghost sm full-width org-switcher-action"
               onClick={() => {
                 setMenuOpen(false)
                 setJoinOpen(true)
               }}
             >
-              加入组织
+              <IconUserPlus size={16} />
+              <span>加入组织</span>
             </button>
             <button
               type="button"
-              className="btn primary sm full-width"
+              className="btn primary sm full-width org-switcher-action"
               onClick={() => {
                 setMenuOpen(false)
                 setCreateOpen(true)
               }}
             >
-              创建组织
+              <IconPlus size={16} />
+              <span>创建组织</span>
             </button>
           </div>
         </div>

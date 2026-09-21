@@ -1,4 +1,9 @@
-import { nextActionLabel, prevActionLabel, stageAdvanceHint } from '../lib/stageRoles'
+import {
+  nextActionLabel,
+  prevActionLabel,
+  prototypeViewActionLabel,
+  stageAdvanceHint,
+} from '../lib/stageRoles'
 import {
   STAGE_LABELS,
   STAGE_ORDER,
@@ -14,6 +19,7 @@ interface StageBarProps {
   disabled?: boolean
   blockedReason?: string | null
   onStageChange: (target: SessionStage) => void
+  onViewPrototype?: () => void
 }
 
 export default function StageBar({
@@ -22,17 +28,19 @@ export default function StageBar({
   disabled,
   blockedReason,
   onStageChange,
+  onViewPrototype,
 }: StageBarProps) {
   const currentIndex = STAGE_ORDER.indexOf(stage)
   const next = nextStage(stage)
   const prev = prevStage(stage)
   const actionLabel = nextActionLabel(role, stage)
   const retreatLabel = prevActionLabel(role, stage)
+  const prototypeViewLabel = prototypeViewActionLabel(role, stage)
   const hint = stageAdvanceHint(role, stage)
 
   return (
     <div className="stage-bar">
-      <ol className="stage-steps" aria-label="Session 阶段">
+      <ol className="stage-steps custom-scrollbar" aria-label="Session 阶段">
         {STAGE_ORDER.map((item, index) => {
           const state =
             index < currentIndex ? 'done' : index === currentIndex ? 'current' : 'todo'
@@ -47,6 +55,16 @@ export default function StageBar({
         })}
       </ol>
       <div className="stage-actions">
+        {prototypeViewLabel && onViewPrototype ? (
+          <button
+            type="button"
+            className="btn ghost sm"
+            disabled={disabled}
+            onClick={onViewPrototype}
+          >
+            {prototypeViewLabel}
+          </button>
+        ) : null}
         {prev && retreatLabel ? (
           <button
             type="button"

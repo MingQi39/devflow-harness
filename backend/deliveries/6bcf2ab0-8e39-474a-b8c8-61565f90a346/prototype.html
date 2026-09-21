@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>待办列表 · 原型</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f4f6fb;
+    color: #1f2937;
+    display: flex;
+    justify-content: center;
+    padding: 32px 16px 64px;
+    min-height: 100vh;
+  }
+  .app {
+    width: 100%;
+    max-width: 520px;
+    background: #fff;
+    border-radius: 18px;
+    box-shadow: 0 10px 40px rgba(30, 41, 59, 0.10);
+    padding: 24px 22px 28px;
+    align-self: flex-start;
+  }
+  h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: .5px; }
+  .subtitle { font-size: 13px; color: #9aa3b2; margin: 0 0 20px; }
+
+  /* 输入区 */
+  .composer { display: flex; gap: 10px; }
+  .composer input {
+    flex: 1;
+    min-width: 0;
+    font-size: 15px;
+    padding: 12px 14px;
+    border: 1.5px solid #e2e6ef;
+    border-radius: 12px;
+    background: #fbfcfe;
+    outline: none;
+    transition: border-color .18s, background .18s;
+  }
+  .composer input:focus { border-color: #5b7cfa; background: #fff; }
+  .composer button {
+    flex-shrink: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    background: #5b7cfa;
+    border: none;
+    border-radius: 12px;
+    padding: 0 20px;
+    cursor: pointer;
+    transition: background .18s, opacity .18s;
+  }
+  .composer button:hover { background: #4a68e0; }
+  .composer button:disabled { background: #c9d1e6; cursor: not-allowed; }
+
+  /* 统计 */
+  .stats {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    color: #7b869a;
+    margin: 18px 2px 10px;
+  }
+  .stats .hint { color: #b0b8c8; font-size: 12px; }
+
+  /* 列表 */
+  ul.list { list-style: none; margin: 0; padding: 0; }
+  li.item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 12px 12px 14px;
+    border: 1.5px solid #eef1f7;
+    border-radius: 12px;
+    margin-bottom: 10px;
+    background: #fff;
+    transition: background .18s, border-color .18s, transform .12s;
+    animation: pop .18s ease-out;
+  }
+  @keyframes pop { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+  li.item:hover { border-color: #dbe2f0; }
+
+  .check {
+    flex-shrink: 0;
+    width: 22px; height: 22px;
+    border: 2px solid #c6cede;
+    border-radius: 50%;
+    background: #fff;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0;
+    transition: background .15s, border-color .15s;
+  }
+  .check svg { width: 12px; height: 12px; opacity: 0; transition: opacity .15s; }
+  .text {
+    flex: 1;
+    font-size: 15px;
+    line-height: 1.4;
+    word-break: break-word;
+    transition: color .18s;
+  }
+  .del {
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    color: #c2c9d8;
+    font-size: 18px;
+    line-height: 1;
+    width: 30px; height: 30px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background .15s, color .15s;
+  }
+  .del:hover { background: #ffecec; color: #e5484d; }
+
+  /* 已完成状态 */
+  li.item.done { background: #f8fafc; border-color: #f0f3f8; }
+  li.item.done .check { background: #34c48b; border-color: #34c48b; }
+  li.item.done .check svg { opacity: 1; }
+  li.item.done .text { color: #a9b2c1; text-decoration: line-through; }
+
+  /* 空状态 */
+  .empty {
+    text-align: center;
+    padding: 40px 10px;
+    color: #b6bfcf;
+    font-size: 14px;
+    border: 1.5px dashed #e8ecf4;
+    border-radius: 12px;
+  }
+  .empty span { display: block; font-size: 30px; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+  <div class="app">
+    <h1>待办列表</h1>
+    <p class="subtitle">记录今天要做的事，做完勾掉它。</p>
+
+    <form class="composer" id="composer" autocomplete="off">
+      <input id="input" type="text" maxlength="100" placeholder="添加一条待办，回车或点右侧按钮" />
+      <button id="addBtn" type="submit" disabled>添加</button>
+    </form>
+
+    <div class="stats">
+      <span id="stats">共 0 项</span>
+      <span class="hint" id="hint"></span>
+    </div>
+
+    <ul class="list" id="list"></ul>
+  </div>
+
+<script>
+(function () {
+  var input = document.getElementById('input');
+  var addBtn = document.getElementById('addBtn');
+  var form = document.getElementById('composer');
+  var listEl = document.getElementById('list');
+  var statsEl = document.getElementById('stats');
+  var hintEl = document.getElementById('hint');
+
+  var todos = [
+    { id: 1, text: '看一下 REQUIREMENTS.md', done: false },
+    { id: 2, text: '写完原型页面', done: true }
+  ];
+  var seq = 3;
+
+  function render() {
+    // 未完成在前，已完成在后
+    var sorted = todos.slice().sort(function (a, b) {
+      return (a.done === b.done) ? a.id - b.id : (a.done ? 1 : -1);
+    });
+
+    listEl.innerHTML = '';
+
+    if (todos.length === 0) {
+      var empty = document.createElement('li');
+      empty.className = 'empty';
+      empty.innerHTML = '<span>📝</span>暂无待办，先添加一条吧';
+      listEl.appendChild(empty);
+    } else {
+      sorted.forEach(function (t) {
+        var li = document.createElement('li');
+        li.className = 'item' + (t.done ? ' done' : '');
+
+        var check = document.createElement('button');
+        check.type = 'button';
+        check.className = 'check';
+        check.setAttribute('aria-label', t.done ? '取消完成' : '标记完成');
+        check.innerHTML = '<svg viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-6.5" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        check.addEventListener('click', function () {
+          t.done = !t.done;
+          render();
+        });
+
+        var text = document.createElement('span');
+        text.className = 'text';
+        text.textContent = t.text;
+
+        var del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'del';
+        del.setAttribute('aria-label', '删除');
+        del.innerHTML = '&times;';
+        del.addEventListener('click', function () {
+          todos = todos.filter(function (x) { return x.id !== t.id; });
+          render();
+        });
+
+        li.appendChild(check);
+        li.appendChild(text);
+        li.appendChild(del);
+        listEl.appendChild(li);
+      });
+    }
+
+    var doneCount = todos.filter(function (t) { return t.done; }).length;
+    statsEl.textContent = '共 ' + todos.length + ' 项，已完成 ' + doneCount + ' 项';
+  }
+
+  function addTodo() {
+    var val = input.value.trim();
+    if (!val) {
+      hintEl.textContent = '内容不能为空';
+      setTimeout(function () { hintEl.textContent = ''; }, 1500);
+      return;
+    }
+    todos.push({ id: seq++, text: val, done: false });
+    input.value = '';
+    addBtn.disabled = true;
+    hintEl.textContent = '';
+    render();
+    input.focus();
+  }
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    addTodo();
+  });
+
+  input.addEventListener('input', function () {
+    addBtn.disabled = input.value.trim() === '';
+    if (hintEl.textContent) hintEl.textContent = '';
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

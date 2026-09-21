@@ -29,6 +29,7 @@ export function mapConversation(raw: Record<string, unknown>): Conversation {
   return {
     id: String(raw.id),
     title: normalizeConversationTitle(raw.title),
+    projectId: (raw.project_id as string | null | undefined) ?? null,
     stage,
     shareToken: (raw.share_token as string | null | undefined) ?? null,
     sharedAt: (raw.shared_at as string | null | undefined) ?? null,

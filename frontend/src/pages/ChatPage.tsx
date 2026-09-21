@@ -5,6 +5,7 @@ import ConversationSidebar from '../components/ConversationSidebar'
 import FileTreePanel from '../components/FileTreePanel'
 import ShareButton from '../components/ShareButton'
 import JoinOrgBanner from '../components/JoinOrgBanner'
+import GitReleaseDialog from '../components/GitReleaseDialog'
 import SendPrototypeDialog from '../components/SendPrototypeDialog'
 import StageBar from '../components/StageBar'
 import { useOrg } from '../contexts/OrgContext'
@@ -12,6 +13,7 @@ import { useOrgContacts } from '../hooks/useOrgContacts'
 import { useAuth } from '../contexts/AuthContext'
 import { apiFetch } from '../lib/api'
 import { chatPath, isFilesView } from '../lib/chatRoutes'
+import { getLastConversationId, rememberConversationId } from '../lib/lastConversation'
 import {
   handleComposerCompositionEnd,
   shouldSubmitComposerOnEnter,
@@ -22,6 +24,7 @@ import {
   composerPlaceholder,
   roleBuildsPrototypeInSession,
   roleCanOpenSessionWorkspace,
+  pickPrototypePreviewPath,
   stageKickoffMessage,
 } from '../lib/stageRoles'
 import {
@@ -31,8 +34,17 @@ import {
   type SessionStage,
 } from '../lib/sessionStage'
 import { stageAdvanceBlockedReason } from '../lib/stageReadiness'
+import { fetchGitStatus, type GitStatusResponse } from '../lib/projectGit'
 import { streamChat } from '../lib/streamChat'
+import type { UserRole } from '../types/auth'
 import type { ChatMessage, Conversation, FileTreeNode } from '../types/chat'
+
+type ChatLocationState = {
+  autoKickoff?: boolean
+  role?: UserRole
+  kickoffText?: string
+  refreshGit?: boolean
+}
 
 function flattenFilePaths(nodes: FileTreeNode[]): string[] {
   const paths: string[] = []
@@ -68,12 +80,16 @@ export default function ChatPage() {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [bootLoading, setBootLoading] = useState(true)
+  const [conversationsReady, setConversationsReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fileTreeRefreshKey, setFileTreeRefreshKey] = useState(0)
   const [stageAdvancing, setStageAdvancing] = useState(false)
   const [workspaceFilePaths, setWorkspaceFilePaths] = useState<string[]>([])
   const [sendPrototypeOpen, setSendPrototypeOpen] = useState(false)
   const [sendToast, setSendToast] = useState<string | null>(null)
+  const [gitStatus, setGitStatus] = useState<GitStatusResponse | null>(null)
+  const [gitReleaseOpen, setGitReleaseOpen] = useState(false)
+  const [workspaceFocusPath, setWorkspaceFocusPath] = useState<string | null>(null)
   const { currentOrgId } = useOrg()
   const { devMembers } = useOrgContacts()
   const abortRef = useRef<AbortController | null>(null)
@@ -89,10 +105,53 @@ export default function ChatPage() {
     isComposingRef,
     enterLockRef: compositionEnterLockRef,
   }
+  const autoKickoffHandledRef = useRef<string | null>(null)
 
   activeIdRef.current = activeId
 
   const activeConversation = conversations.find((item) => item.id === activeId) ?? null
+  const activeProjectId = activeConversation?.projectId ?? null
+
+  const [gitStatusRefreshTick, setGitStatusRefreshTick] = useState(0)
+  const chatLocationState = location.state as ChatLocationState | null
+
+  useEffect(() => {
+    if (!chatLocationState?.refreshGit) return
+    setGitStatusRefreshTick((value) => value + 1)
+    navigate(location.pathname, { replace: true, state: { ...chatLocationState, refreshGit: false } })
+  }, [chatLocationState?.refreshGit, location.pathname, navigate])
+
+  useEffect(() => {
+    const bumpGitStatus = () => setGitStatusRefreshTick((value) => value + 1)
+    window.addEventListener('focus', bumpGitStatus)
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') bumpGitStatus()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('focus', bumpGitStatus)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!currentOrgId || !activeProjectId) {
+      setGitStatus(null)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const status = await fetchGitStatus(currentOrgId, activeProjectId)
+        if (!cancelled) setGitStatus(status)
+      } catch {
+        if (!cancelled) setGitStatus(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [activeProjectId, currentOrgId, fileTreeRefreshKey, gitStatusRefreshTick])
 
   const refreshConversations = useCallback(async () => {
     const raw = await apiFetch<Record<string, unknown>[]>('/conversations')
@@ -118,7 +177,7 @@ export default function ChatPage() {
         let list = await refreshConversations()
         if (cancelled) return
 
-        if (list.length === 0) {
+        if (list.length === 0 && !conversationId) {
           const created = await apiFetch<Record<string, unknown>>('/conversations', {
             method: 'POST',
             body: JSON.stringify({ title: '新对话' }),
@@ -131,26 +190,38 @@ export default function ChatPage() {
           setError(err instanceof Error ? err.message : '加载失败')
         }
       } finally {
-        if (!cancelled) setBootLoading(false)
+        if (!cancelled) {
+          setBootLoading(false)
+          setConversationsReady(true)
+        }
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [refreshConversations])
+  }, [conversationId, refreshConversations])
 
   useEffect(() => {
-    if (bootLoading || conversations.length === 0) return
+    if (!conversationsReady || bootLoading) return
 
     if (!conversationId) {
-      navigate(chatPath(conversations[0].id, 'chat'), { replace: true })
+      if (conversations.length === 0) return
+      const last = getLastConversationId()
+      const fallback =
+        last && conversations.some((item) => item.id === last)
+          ? last
+          : conversations[0].id
+      navigate(chatPath(fallback, 'chat'), { replace: true })
       return
     }
 
-    if (!conversations.some((item) => item.id === conversationId)) {
+    if (
+      conversations.length > 0 &&
+      !conversations.some((item) => item.id === conversationId)
+    ) {
       navigate(chatPath(conversations[0].id, 'chat'), { replace: true })
     }
-  }, [bootLoading, conversationId, conversations, navigate])
+  }, [bootLoading, conversationId, conversations, conversationsReady, navigate])
 
   const activeStage = activeConversation?.stage ?? 'requirement'
   const canOpenSessionWorkspace = roleCanOpenSessionWorkspace(userRole, activeStage)
@@ -163,6 +234,10 @@ export default function ChatPage() {
     if (!activeId || !workspaceOpen || canOpenSessionWorkspace) return
     navigate(chatPath(activeId, 'chat'), { replace: true })
   }, [activeId, workspaceOpen, canOpenSessionWorkspace, navigate])
+
+  useEffect(() => {
+    if (activeId) rememberConversationId(activeId)
+  }, [activeId])
 
   useEffect(() => {
     if (!activeId || bootLoading) return
@@ -447,6 +522,41 @@ export default function ChatPage() {
     ],
   )
 
+  useEffect(() => {
+    const state = location.state as ChatLocationState | null
+    if (!state?.autoKickoff || !activeId || bootLoading || isLoading) return
+    if (autoKickoffHandledRef.current === activeId) return
+    if (activeStage !== 'development') return
+    const kickoffRole = state.role ?? userRole
+    const kickoff =
+      state.kickoffText?.trim() || stageKickoffMessage(activeStage, kickoffRole)
+    if (!kickoff) return
+    const hasUserMessages = messages.some((item) => item.role === 'user')
+    if (hasUserMessages) return
+
+    autoKickoffHandledRef.current = activeId
+    navigate(location.pathname, { replace: true, state: {} })
+    void sendUserMessage(kickoff)
+  }, [
+    activeId,
+    activeStage,
+    bootLoading,
+    isLoading,
+    location.pathname,
+    location.state,
+    messages,
+    navigate,
+    sendUserMessage,
+    userRole,
+  ])
+
+  const handleViewPrototype = useCallback(() => {
+    if (!activeId || !canOpenSessionWorkspace) return
+    const path = pickPrototypePreviewPath(workspaceFilePaths)
+    setWorkspaceFocusPath(path)
+    navigate(chatPath(activeId, 'files'))
+  }, [activeId, canOpenSessionWorkspace, navigate, workspaceFilePaths])
+
   const handleStageChange = async (targetStage: SessionStage) => {
     if (!activeId || isLoading || stageAdvancing) return
     const fromIndex = STAGE_ORDER.indexOf(activeStage)
@@ -505,7 +615,11 @@ export default function ChatPage() {
     [activeStage, messages, workspaceFilePaths],
   )
 
-  if (bootLoading || (!conversationId && conversations.length > 0)) {
+  if (
+    bootLoading ||
+    !conversationsReady ||
+    (!conversationId && conversations.length > 0)
+  ) {
     return <div className="auth-loading">加载对话…</div>
   }
 
@@ -515,6 +629,22 @@ export default function ChatPage() {
         showEmbeddedWorkspace && !workspaceOpen ? ' has-embedded-workspace' : ''
       }${!showWorkspacePanel && !workspaceOpen ? ' is-chat-only' : ''}`}
     >
+      {activeProjectId && currentOrgId ? (
+        <GitReleaseDialog
+          open={gitReleaseOpen}
+          orgId={currentOrgId}
+          projectId={activeProjectId}
+          mainBranch={gitStatus?.main_branch ?? null}
+          devBranch={gitStatus?.dev_branch ?? null}
+          initialRemoteUrl={gitStatus?.remote_url ?? null}
+          onClose={() => setGitReleaseOpen(false)}
+          onPushed={(message) => {
+            setSendToast(message)
+            window.setTimeout(() => setSendToast(null), 5000)
+            setFileTreeRefreshKey((value) => value + 1)
+          }}
+        />
+      ) : null}
       {activeId && currentOrgId ? (
         <SendPrototypeDialog
           open={sendPrototypeOpen}
@@ -554,6 +684,7 @@ export default function ChatPage() {
           onSendToDevelopers={() => setSendPrototypeOpen(true)}
           onBackToChat={() => navigate(chatPath(activeId!, 'chat'))}
           emptyHintVariant={showEmbeddedWorkspace ? 'pm' : 'dev'}
+          focusPath={workspaceFocusPath}
         />
       ) : null}
 
@@ -562,10 +693,39 @@ export default function ChatPage() {
             <div>
               <h1 className="chat-header-title">{activeConversation?.title ?? '新对话'}</h1>
               <p className="chat-header-sub">
-                {STAGE_LABELS[activeStage]} · 待办 Demo 闭环
+                {STAGE_LABELS[activeStage]}
+                {activeConversation?.projectId ? ' · 项目沙箱' : ' · 待办 Demo 闭环'}
+                {gitStatus?.enabled && gitStatus.current_branch ? (
+                  <>
+                    {' '}
+                    · 分支{' '}
+                    <code className="git-branch-pill">
+                      {gitStatus.current_branch}
+                    </code>
+                    {gitStatus.repo_root && gitStatus.repo_root !== '.' ? (
+                      <span className="git-branch-repo" title="Git 仓库目录">
+                        {' '}
+                        @ {gitStatus.repo_root}
+                      </span>
+                    ) : null}
+                  </>
+                ) : null}
               </p>
             </div>
             <div className="header-actions">
+              {activeProjectId &&
+              currentOrgId &&
+              gitStatus?.enabled &&
+              (gitStatus.dev_branch ||
+                gitStatus.current_branch?.startsWith('devflow/')) ? (
+                <button
+                  type="button"
+                  className="btn secondary sm"
+                  onClick={() => setGitReleaseOpen(true)}
+                >
+                  发布代码
+                </button>
+              ) : null}
               {activeId && canOpenSessionWorkspace ? (
                 <button
                   type="button"
@@ -602,6 +762,9 @@ export default function ChatPage() {
               disabled={isLoading || stageAdvancing}
               blockedReason={stageBlockedReason}
               onStageChange={(stage) => void handleStageChange(stage)}
+              onViewPrototype={
+                canOpenSessionWorkspace ? handleViewPrototype : undefined
+              }
             />
           ) : null}
 

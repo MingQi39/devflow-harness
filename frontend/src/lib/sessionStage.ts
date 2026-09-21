@@ -45,7 +45,7 @@ export function prevStage(current: SessionStage): SessionStage | null {
 export function preferredPreviewFiles(stage: SessionStage): string[] {
   if (stage === 'requirement') return ['REQUIREMENTS.md']
   if (stage === 'prototype') return ['prototype.html', 'index.html']
-  return ['index.html', 'prototype.html']
+  return ['index.html', 'frontend/index.html', 'docs/prototype.html', 'prototype.html']
 }
 
 export function pickPreferredFile(paths: string[], preferred: string[]): string | null {

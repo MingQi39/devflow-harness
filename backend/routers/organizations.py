@@ -5,13 +5,14 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from db import get_db
 from deps import require_permission
 from models.organization import OrgMember, OrgMembershipRole, Organization
+from models.project import Project
 from models.prototype_delivery import PrototypeDelivery
 from models.user import User
 from schemas.organization import (
@@ -20,6 +21,12 @@ from schemas.organization import (
     OrganizationCreate,
     OrganizationJoin,
     OrganizationOut,
+)
+from schemas.dev_project import (
+    AnalyzeStackRequest,
+    AnalyzeStackResponse,
+    DevProjectBootstrapCreate,
+    DevProjectBootstrapOut,
 )
 from schemas.prototype_delivery import (
     DeliveryFileOut,
@@ -34,6 +41,7 @@ from services.organizations import (
     list_user_organizations,
     require_org_member,
 )
+from services.dev_project_bootstrap import DevProjectError, bootstrap_dev_project_from_delivery
 from services.prototype_delivery import (
     DeliveryError,
     get_delivery_for_user,
@@ -43,6 +51,7 @@ from services.prototype_delivery import (
     read_delivery_file,
     send_prototype_deliveries,
 )
+from services.stack_analysis import analyze_stack
 
 router = APIRouter(prefix="/orgs", tags=["organizations"])
 
@@ -80,6 +89,11 @@ def _org_out(db: Session, org: Organization, user_id: uuid.UUID) -> Organization
 def _delivery_out(db: Session, delivery: PrototypeDelivery) -> PrototypeDeliveryOut:
     sender = db.query(User).filter(User.id == delivery.sender_id).first()
     recipient = db.query(User).filter(User.id == delivery.recipient_id).first()
+    dev_conversation_id = None
+    if delivery.dev_project_id is not None:
+        project = db.query(Project).filter(Project.id == delivery.dev_project_id).first()
+        if project is not None:
+            dev_conversation_id = project.primary_conversation_id
     return PrototypeDeliveryOut(
         id=delivery.id,
         org_id=delivery.org_id,
@@ -91,6 +105,8 @@ def _delivery_out(db: Session, delivery: PrototypeDelivery) -> PrototypeDelivery
         title=delivery.title,
         message=delivery.message,
         read_at=delivery.read_at,
+        dev_project_id=delivery.dev_project_id,
+        dev_conversation_id=dev_conversation_id,
         created_at=delivery.created_at,
     )
 
@@ -186,6 +202,7 @@ def create_prototype_deliveries(
             sender=user,
             conversation_id=body.conversation_id,
             recipient_ids=body.recipient_user_ids,
+            title=body.title,
             message=body.message,
         )
     except DeliveryError as exc:
@@ -242,6 +259,77 @@ def read_prototype_delivery(
     except DeliveryError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return _delivery_out(db, delivery)
+
+
+@router.post(
+    "/{org_id}/prototype-deliveries/{delivery_id}/analyze-stack",
+    response_model=AnalyzeStackResponse,
+)
+def analyze_delivery_stack(
+    org_id: uuid.UUID,
+    delivery_id: uuid.UUID,
+    body: AnalyzeStackRequest,
+    user: Annotated[User, Depends(require_permission("dev:write_code"))],
+    db: Annotated[Session, Depends(get_db)],
+) -> AnalyzeStackResponse:
+    try:
+        get_delivery_for_user(db, user, org_id, delivery_id)
+    except DeliveryError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    requirements_hint = ""
+    try:
+        requirements_hint = read_delivery_file(delivery_id, "REQUIREMENTS.md")
+    except DeliveryError:
+        pass
+    recommendation, used_llm = analyze_stack(
+        prompt=body.prompt,
+        requirements_hint=requirements_hint[:4000],
+    )
+    return AnalyzeStackResponse(recommendation=recommendation, used_llm=used_llm)
+
+
+@router.post(
+    "/{org_id}/prototype-deliveries/{delivery_id}/dev-project",
+    response_model=DevProjectBootstrapOut,
+)
+def create_dev_project_from_delivery(
+    org_id: uuid.UUID,
+    delivery_id: uuid.UUID,
+    body: DevProjectBootstrapCreate,
+    response: Response,
+    user: Annotated[User, Depends(require_permission("dev:write_code"))],
+    db: Annotated[Session, Depends(get_db)],
+) -> DevProjectBootstrapOut:
+    try:
+        project, conversation, created, files_imported = bootstrap_dev_project_from_delivery(
+            db,
+            org_id=org_id,
+            delivery_id=delivery_id,
+            developer=user,
+            title=body.title,
+            mode=body.mode,
+            prompt=body.prompt,
+            stack=body.stack,
+            source_path=body.source_path,
+        )
+    except DeliveryError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except DevProjectError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    response.status_code = (
+        status.HTTP_201_CREATED if created else status.HTTP_200_OK
+    )
+    origin_mode = body.mode if created else "import"
+    stack_id = body.stack.stack_id if body.stack else None
+    return DevProjectBootstrapOut(
+        project_id=project.id,
+        conversation_id=conversation.id,
+        created=created,
+        delivery_id=delivery_id,
+        origin_mode=origin_mode,
+        stack_id=stack_id,
+        files_imported=files_imported,
+    )
 
 
 @router.get("/{org_id}/prototype-deliveries/{delivery_id}/files/content", response_model=DeliveryFileOut)

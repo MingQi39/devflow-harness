@@ -50,6 +50,7 @@ def send_prototype_deliveries(
     sender: User,
     conversation_id: uuid.UUID,
     recipient_ids: list[uuid.UUID],
+    title: str,
     message: str,
 ) -> list[PrototypeDelivery]:
     if sender.role is not UserRole.pm:
@@ -80,8 +81,10 @@ def send_prototype_deliveries(
     if not recipients:
         raise DeliveryError("No valid recipients")
 
+    req_title = title.strip()[:200]
+    if not req_title:
+        raise DeliveryError("请填写需求标题")
     note = message.strip()
-    title = conversation.title or "原型交付"
     created: list[PrototypeDelivery] = []
 
     for recipient in recipients:
@@ -90,7 +93,7 @@ def send_prototype_deliveries(
             conversation_id=conversation_id,
             sender_id=sender.id,
             recipient_id=recipient.id,
-            title=title,
+            title=req_title,
             message=note,
         )
         db.add(delivery)

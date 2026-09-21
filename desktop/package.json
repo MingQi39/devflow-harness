@@ -1,0 +1,22 @@
+{
+  "name": "devflow-harness-desktop",
+  "private": true,
+  "version": "0.4.0-m3",
+  "description": "DevFlow Harness 桌面客户端（本地目录导入）",
+  "main": "main.mjs",
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/require-vite.mjs && electron .",
+    "dev": "node scripts/require-vite.mjs && electron .",
+    "electron:dev": "concurrently -k -n web,electron \"pnpm --dir ../frontend dev\" \"node scripts/wait-vite-and-electron.mjs\"",
+    "test": "node --test test/**/*.test.mjs"
+  },
+  "dependencies": {
+    "archiver": "^7.0.1"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "electron": "^33.2.1",
+    "wait-on": "^8.0.1"
+  }
+}

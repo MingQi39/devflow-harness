@@ -1,11 +1,22 @@
 import { FormEvent, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { chatPath } from '../lib/chatRoutes'
 import ConfirmDialog from './ConfirmDialog'
 import OrganizationSwitcher from './OrganizationSwitcher'
 import { useInboxUnread } from '../hooks/useInboxUnread'
+import { chatHomePath } from '../lib/lastConversation'
 import { STAGE_LABELS } from '../lib/sessionStage'
 import { ROLE_LABELS } from '../types/auth'
 import type { User } from '../types/auth'
+import {
+  IconInbox,
+  IconMessageSquare,
+  IconPanelLeftClose,
+  IconPanelLeftOpen,
+  IconSend,
+  IconUsers,
+} from './icons/LayoutIcons'
+import { usePersistedBool } from '../lib/usePersistedBool'
 import type { Conversation } from '../types/chat'
 
 interface ConversationSidebarProps {
@@ -54,35 +65,70 @@ export default function ConversationSidebar({
   const { unreadCount } = useInboxUnread()
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
   const deleteTarget = conversations.find((item) => item.id === deleteTargetId) ?? null
+  const [navExpanded, setNavExpanded] = usePersistedBool('devflow.navSidebarExpanded', true)
+
+  const collapseNavForWidePage = () => {
+    setNavExpanded(false)
+  }
+
+  useEffect(() => {
+    if (navActive === 'contacts' || navActive === 'inbox' || navActive === 'sent') {
+      setNavExpanded(false)
+    }
+  }, [navActive, setNavExpanded])
 
   return (
-    <aside className="conversation-sidebar">
+    <aside className={`conversation-sidebar${navExpanded ? '' : ' is-collapsed'}`}>
       <div className="sidebar-brand">
         <img src="/favicon.png" alt="DevFlow Harness" width={36} height={36} />
         <span className="sidebar-brand-text">DevFlow Harness</span>
+        <button
+          type="button"
+          className="sidebar-collapse-btn"
+          aria-expanded={navExpanded}
+          aria-label={navExpanded ? '收起导航侧栏' : '展开导航侧栏'}
+          title={navExpanded ? '收起导航侧栏' : '展开导航侧栏'}
+          onClick={() => setNavExpanded((open) => !open)}
+        >
+          {navExpanded ? <IconPanelLeftClose size={18} /> : <IconPanelLeftOpen size={18} />}
+        </button>
       </div>
 
       <OrganizationSwitcher />
 
       <nav className="sidebar-nav" aria-label="主导航">
         <Link
-          to="/"
+          to={chatHomePath()}
           className={`sidebar-nav-link${navActive === 'chat' ? ' active' : ''}`}
+          title="对话"
         >
-          对话
+          <span className="sidebar-nav-icon" aria-hidden>
+            <IconMessageSquare size={18} />
+          </span>
+          <span className="sidebar-nav-text">对话</span>
         </Link>
         <Link
           to="/contacts"
           className={`sidebar-nav-link${navActive === 'contacts' ? ' active' : ''}`}
+          title="联系人"
+          onClick={collapseNavForWidePage}
         >
-          联系人
+          <span className="sidebar-nav-icon" aria-hidden>
+            <IconUsers size={18} />
+          </span>
+          <span className="sidebar-nav-text">联系人</span>
         </Link>
         {canInbox ? (
           <Link
             to="/inbox"
             className={`sidebar-nav-link${navActive === 'inbox' ? ' active' : ''}`}
+            title="原型收件箱"
+            onClick={collapseNavForWidePage}
           >
-            原型收件箱
+            <span className="sidebar-nav-icon" aria-hidden>
+              <IconInbox size={18} />
+            </span>
+            <span className="sidebar-nav-text">原型收件箱</span>
             {unreadCount > 0 ? (
               <span className="sidebar-nav-badge">{unreadCount > 99 ? '99+' : unreadCount}</span>
             ) : null}
@@ -92,8 +138,13 @@ export default function ConversationSidebar({
           <Link
             to="/inbox"
             className={`sidebar-nav-link${navActive === 'sent' ? ' active' : ''}`}
+            title="已发原型"
+            onClick={collapseNavForWidePage}
           >
-            已发原型
+            <span className="sidebar-nav-icon" aria-hidden>
+              <IconSend size={18} />
+            </span>
+            <span className="sidebar-nav-text">已发原型</span>
           </Link>
         ) : null}
       </nav>
@@ -128,8 +179,11 @@ export default function ConversationSidebar({
         </>
       ) : (
         <div className="sidebar-compact-hint">
-          <Link to="/" className="sidebar-back-link">
-            返回对话工作台
+          <Link to={chatHomePath()} className="sidebar-back-link" title="返回对话工作台">
+            <span className="sidebar-nav-icon" aria-hidden>
+              <IconMessageSquare size={18} />
+            </span>
+            <span className="sidebar-back-text">返回对话工作台</span>
           </Link>
         </div>
       )}
@@ -240,13 +294,17 @@ function ConversationRow({
           />
         </form>
       ) : (
-        <button type="button" className="conversation-select" onClick={onSelect}>
+        <Link
+          to={chatPath(conversation.id, 'chat')}
+          className="conversation-select"
+          onClick={onSelect}
+        >
           <span className="conversation-title">{conversation.title}</span>
           <span className="conversation-time">
             <span className="conversation-stage">{STAGE_LABELS[conversation.stage]}</span>
             {formatRelativeTime(conversation.updatedAt)}
           </span>
-        </button>
+        </Link>
       )}
       <div className="conversation-actions">
         <button

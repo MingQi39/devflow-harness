@@ -16,11 +16,16 @@ class WorkspaceError(Exception):
     """Raised when a workspace path operation is invalid."""
 
 
-def get_workspace_root(conversation_id: uuid.UUID) -> Path:
+def _workspaces_base() -> Path:
     settings = get_settings()
     root = Path(settings.workspaces_root).resolve()
     root.mkdir(parents=True, exist_ok=True)
-    workspace = root / str(conversation_id)
+    return root
+
+
+def get_workspace_root(conversation_id: uuid.UUID) -> Path:
+    """Legacy PM / solo session directory keyed by conversation id."""
+    workspace = _workspaces_base() / str(conversation_id)
     workspace.mkdir(parents=True, exist_ok=True)
     return workspace
 
@@ -33,6 +38,30 @@ def ensure_workspace(conversation_id: uuid.UUID) -> Path:
 
 def remove_workspace(conversation_id: uuid.UUID) -> None:
     workspace = get_workspace_root(conversation_id)
+    if workspace.exists():
+        shutil.rmtree(workspace)
+
+
+def get_project_workspace_root(project_id: uuid.UUID) -> Path:
+    """Project sandbox root — local bind when set, else under workspaces/projects/."""
+    from services.project_local_bind import read_bound_local_root
+
+    bound = read_bound_local_root(project_id)
+    if bound is not None:
+        return bound
+    workspace = _workspaces_base() / "projects" / str(project_id)
+    workspace.mkdir(parents=True, exist_ok=True)
+    return workspace
+
+
+def ensure_project_workspace(project_id: uuid.UUID) -> Path:
+    workspace = get_project_workspace_root(project_id)
+    workspace.mkdir(parents=True, exist_ok=True)
+    return workspace
+
+
+def remove_project_workspace(project_id: uuid.UUID) -> None:
+    workspace = get_project_workspace_root(project_id)
     if workspace.exists():
         shutil.rmtree(workspace)
 
@@ -102,17 +131,69 @@ def write_file(workspace: Path, relative_path: str, content: str) -> None:
     target.write_text(content, encoding="utf-8")
 
 
+def format_dir_listing(
+    workspace: Path,
+    relative_path: str = "",
+    *,
+    max_depth: int = 2,
+) -> str:
+    """Text listing for agents; skips heavy dependency dirs."""
+    from services.project_import_skip import IMPORT_SKIP_DIR_NAMES
+
+    clean = relative_path.strip().replace("\\", "/")
+    if clean in ("", "."):
+        base = workspace.resolve()
+    else:
+        base = safe_resolve(workspace, clean)
+    if not base.is_dir():
+        raise WorkspaceError(f"Not a directory: {relative_path or '.'}")
+
+    lines: list[str] = []
+    root = workspace.resolve()
+
+    def walk(directory: Path, depth: int) -> None:
+        if depth > max_depth:
+            return
+        try:
+            entries = sorted(
+                directory.iterdir(),
+                key=lambda item: (not item.is_dir(), item.name.lower()),
+            )
+        except OSError as exc:
+            lines.append(f"[cannot read {directory}: {exc}]")
+            return
+        for entry in entries:
+            if entry.name in IMPORT_SKIP_DIR_NAMES:
+                continue
+            if entry.name.startswith("."):
+                continue
+            rel = entry.relative_to(root).as_posix()
+            if entry.is_dir():
+                lines.append(f"{rel}/")
+                walk(entry, depth + 1)
+            else:
+                lines.append(rel)
+
+    walk(base, 1)
+    header = f"Project root: {root}"
+    if not lines:
+        return f"{header}\n(empty)"
+    return header + "\n" + "\n".join(lines)
+
+
 def build_tree(workspace: Path) -> list[dict[str, Any]]:
     if not workspace.exists():
         return []
 
     def walk(directory: Path) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
+        from services.project_import_skip import IMPORT_SKIP_DIR_NAMES
+
         for entry in sorted(
             directory.iterdir(),
             key=lambda item: (not item.is_dir(), item.name.lower()),
         ):
-            if entry.name.startswith("."):
+            if entry.name.startswith(".") or entry.name in IMPORT_SKIP_DIR_NAMES:
                 continue
             rel = entry.relative_to(workspace).as_posix()
             if entry.is_dir():

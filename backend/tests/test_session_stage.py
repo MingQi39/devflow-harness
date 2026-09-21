@@ -96,6 +96,9 @@ def test_can_retreat_one_step_without_readiness(tmp_path: Path):
     )
     assert role_can_retreat_from("pm", SessionStage.prototype)
     assert not role_can_retreat_from("frontend", SessionStage.prototype)
+    assert role_can_retreat_from("pm", SessionStage.development)
+    assert not role_can_retreat_from("frontend", SessionStage.development)
+    assert not role_can_retreat_from("backend", SessionStage.development)
 
 
 def test_role_gate_for_stage_advance():
@@ -138,7 +141,7 @@ def test_system_prompt_tells_agent_which_file_to_write():
     assert "Do not write HTML yet" in requirement_prompt
     assert "prototype.html" in prototype_prompt
     assert "clickable" in prototype_prompt.lower() or "check" in prototype_prompt.lower()
-    assert "index.html" in development_prompt
-    assert "Do not overwrite prototype.html" in development_prompt
+    assert "list_dir" in development_prompt
+    assert "docs/" in development_prompt
     assert "Do not change files unless" in qa_prompt
     assert "iframe" in prototype_prompt.lower()

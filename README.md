@@ -105,6 +105,17 @@ pnpm dev
 
 浏览器打开：**http://localhost:5173**
 
+### 桌面端（Electron，本地目录导入）
+
+无需 ZIP，用系统文件夹选择器导入项目（类似 Cursor）。详见 [`desktop/README.md`](desktop/README.md)。
+
+```bash
+# backend/.env 增加：ALLOW_LOCAL_PATH_IMPORT=true
+cd desktop && npm install && npm start
+```
+
+需同时运行 Postgres、后端与 `frontend` 的 `pnpm dev`（Electron 默认加载 `http://127.0.0.1:5173`）。
+
 ### 环境变量说明
 
 | 文件 | 用途 |

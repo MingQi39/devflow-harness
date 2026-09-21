@@ -28,7 +28,7 @@ interface OrgContextValue {
 const OrgContext = createContext<OrgContextValue | null>(null)
 
 export function OrgProvider({ children }: { children: ReactNode }) {
-  const { isAuthenticated, refreshSession } = useAuth()
+  const { isAuthenticated, isLoading: authLoading, refreshSession } = useAuth()
   const [orgs, setOrgs] = useState<Organization[]>([])
   const [currentOrgId, setCurrentOrgIdState] = useState<string | null>(() =>
     localStorage.getItem(ORG_STORAGE_KEY),
@@ -56,8 +56,14 @@ export function OrgProvider({ children }: { children: ReactNode }) {
         setError(null)
         if (list.length === 0) {
           setCurrentOrgId(null)
-        } else if (!currentOrgId || !list.some((item) => item.id === currentOrgId)) {
-          setCurrentOrgId(list[0].id)
+        } else {
+          const storedId = localStorage.getItem(ORG_STORAGE_KEY)
+          const preferredId = currentOrgId ?? storedId
+          if (preferredId && list.some((item) => item.id === preferredId)) {
+            if (preferredId !== currentOrgId) setCurrentOrgId(preferredId)
+          } else {
+            setCurrentOrgId(list[0].id)
+          }
         }
       } catch (err) {
         if (!retry && err instanceof ApiError && err.status === 403) {
@@ -74,12 +80,13 @@ export function OrgProvider({ children }: { children: ReactNode }) {
   }, [currentOrgId, isAuthenticated, refreshSession, setCurrentOrgId])
 
   useEffect(() => {
+    if (authLoading) return
     if (isAuthenticated) void refreshOrgs()
     else {
       setOrgs([])
       setCurrentOrgId(null)
     }
-  }, [isAuthenticated]) // eslint-disable-line react-hooks/exhaustive-deps -- refresh on login only
+  }, [isAuthenticated, authLoading]) // eslint-disable-line react-hooks/exhaustive-deps -- refresh on login only
 
   const joinOrg = useCallback(
     async (inviteCode: string) => {

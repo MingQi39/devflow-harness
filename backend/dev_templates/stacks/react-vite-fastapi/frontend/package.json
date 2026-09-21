@@ -1,0 +1,6 @@
+{
+  "name": "devflow-todo-frontend",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Scaffold for M4+; M3 demo uses index.html at session root."
+}

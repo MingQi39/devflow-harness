@@ -27,7 +27,7 @@ export default function App() {
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/share/:token" element={<SharePage />} />
             <Route path="/contacts" element={<ProtectedRoute><ContactsPage /></ProtectedRoute>} />
-            <Route path="/inbox" element={<ProtectedRoute><InboxPage /></ProtectedRoute>} />
+            <Route path="/inbox/:deliveryId?" element={<ProtectedRoute><InboxPage /></ProtectedRoute>} />
             <Route path="/chat/:conversationId/files" element={<ProtectedChatPage />} />
             <Route path="/chat/:conversationId" element={<ProtectedChatPage />} />
             <Route path="/" element={<ProtectedChatPage />} />

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import enum
 from pathlib import Path
 
@@ -86,7 +88,7 @@ def previous_stage(current: SessionStage) -> SessionStage | None:
 # Who may move back *from* the current stage (redo an earlier step).
 STAGE_RETREAT_ROLES: dict[SessionStage, tuple[str, ...]] = {
     SessionStage.prototype: ("pm",),
-    SessionStage.development: ("pm", "frontend", "backend"),
+    SessionStage.development: ("pm",),
     SessionStage.qa: ("pm", "qa", "frontend", "backend"),
     SessionStage.done: ("pm", "qa"),
 }
@@ -102,7 +104,7 @@ def stage_retreat_blocked_message(role: str, current: SessionStage) -> str:
     if current is SessionStage.prototype:
         return "仅 PM 可将 Session 退回到需求阶段"
     if current is SessionStage.development:
-        return "请 PM 或开发同学将 Session 退回到原型阶段"
+        return "仅 PM 可将 Session 退回到原型阶段；开发请使用「查看原型」对照预览"
     if current is SessionStage.qa:
         return "请 PM、QA 或开发同学将 Session 退回到开发阶段"
     if current is SessionStage.done:
@@ -124,6 +126,20 @@ def _workspace_file_nonempty(workspace: Path, relative_path: str) -> bool:
         return bool(read_file(workspace, relative_path).strip())
     except WorkspaceError:
         return False
+
+
+def _has_preview_page(workspace: Path) -> bool:
+    for relative_path in ("index.html", "frontend/index.html"):
+        if _workspace_file_nonempty(workspace, relative_path):
+            return True
+    return False
+
+
+def _has_prototype_reference(workspace: Path) -> bool:
+    for relative_path in ("prototype.html", "docs/prototype.html"):
+        if _workspace_file_nonempty(workspace, relative_path):
+            return True
+    return False
 
 
 def _has_user_requirement_dialogue(user_message_bodies: list[str]) -> bool:
@@ -151,15 +167,15 @@ def stage_advance_ready_message(
     if current is SessionStage.prototype:
         if not _workspace_file_nonempty(workspace, "REQUIREMENTS.md"):
             return "缺少 REQUIREMENTS.md，请回到需求阶段补充"
-        if not _workspace_file_nonempty(workspace, "prototype.html"):
+        if not _has_prototype_reference(workspace):
             return "请先生成可点击的 prototype.html 后再移交开发"
         return None
     if current is SessionStage.development:
-        if not _workspace_file_nonempty(workspace, "index.html"):
+        if not _has_preview_page(workspace):
             return "请先实现 index.html 后再提交测试"
         return None
     if current is SessionStage.qa:
-        if not _workspace_file_nonempty(workspace, "index.html"):
+        if not _has_preview_page(workspace):
             return "缺少 index.html，无法完成提测"
         return None
     return None
@@ -227,11 +243,20 @@ def preferred_preview_files(stage: SessionStage) -> list[str]:
         return ["REQUIREMENTS.md"]
     if stage is SessionStage.prototype:
         return ["prototype.html", "index.html"]
-    return ["index.html", "prototype.html"]
+    return ["index.html", "frontend/index.html", "docs/prototype.html", "prototype.html"]
 
 
-def build_system_prompt(stage: SessionStage) -> str:
+def build_system_prompt(
+    stage: SessionStage,
+    workspace_root: Path | None = None,
+    *,
+    git_context: str = "",
+) -> str:
     label = STAGE_LABELS[stage]
+    root_line = ""
+    if workspace_root is not None:
+        root_line = f"\nProject root on disk: {workspace_root.resolve()}\n"
+    git_block = f"\n{git_context.strip()}\n" if git_context.strip() else ""
     return (
         "You are DevFlow Harness, an AI assistant embedded in a project session workspace. "
         "Language: match the user's language. Reply in the same language as the user's latest "
@@ -243,8 +268,12 @@ def build_system_prompt(stage: SessionStage) -> str:
         "When the user asks to create, save, or modify a file, call write_file immediately — "
         "do NOT paste the full file in chat instead of saving it. "
         "When you need existing file contents, call read_file. "
+        "When the user asks what folders/files exist, or about project layout, call list_dir first — "
+        "never invent a directory tree from memory or from generic templates. "
         "Paths are relative to the session root (e.g. index.html, src/app.js). "
-        "After write_file succeeds, briefly summarize what you changed in the user's language.\n\n"
+        "After write_file succeeds, briefly summarize what you changed in the user's language."
+        f"{root_line}"
+        f"{git_block}"
         f"Current session stage: {stage.value} ({label}).\n"
         f"{_stage_instructions(stage)}"
     )
@@ -267,10 +296,16 @@ def _stage_instructions(stage: SessionStage) -> str:
         )
     if stage is SessionStage.development:
         return (
-            "Read prototype.html and REQUIREMENTS.md if they exist. Implement the real page as "
-            "index.html (plus optional css/js). Do not overwrite prototype.html. The page must "
-            "remain interactive in the iframe. After writing, tell the user they can click "
-            "「提交测试」."
+            "Development sandbox: the tree is whatever list_dir shows (often a bound local repo). "
+            "PM prototype and REQUIREMENTS live in the DevFlow delivery (UI: 查看原型 / 收件箱), "
+            "not necessarily as docs/ in the repo — do not create docs/ unless the user asks. "
+            "Follow the existing stack and folders; do not assume frontend/ or backend/ exist "
+            "unless list_dir lists them. "
+            "For git/branch questions: use the Live Git status block above or call git_status. "
+            "Never answer from chat history or by reading .git/HEAD. If sandbox root is NOT a "
+            "git repository, say so and report each nested repo branch separately. "
+            "After meaningful changes, tell the user they can click "
+            "「提交测试」 when ready."
         )
     if stage is SessionStage.qa:
         return (

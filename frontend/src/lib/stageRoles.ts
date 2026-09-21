@@ -1,4 +1,5 @@
 import type { UserRole } from '../types/auth'
+import type { DevProjectOriginMode } from '../types/devProject'
 import { DEMO_PROMPT, type SessionStage } from './sessionStage'
 
 /** PM 在 Session 内生成原型；开发/测试通过收件箱或项目文件查看，不默认展示原型工作区。 */
@@ -65,7 +66,8 @@ const STAGE_ADVANCE_ROLES: Record<SessionStage, UserRole[] | null> = {
 
 const STAGE_RETREAT_ROLES: Partial<Record<SessionStage, UserRole[]>> = {
   prototype: ['pm'],
-  development: ['pm', 'frontend', 'backend'],
+  /** 开发/测试不能回退到原型阶段，只能只读查看原型预览 */
+  development: ['pm'],
   qa: ['pm', 'qa', 'frontend', 'backend'],
   done: ['pm', 'qa'],
 }
@@ -101,6 +103,23 @@ export function prevActionLabel(role: UserRole, stage: SessionStage): string | n
   return null
 }
 
+/** 开发在开发/提测阶段对照 PM 原型，只打开预览，不切换 Session 阶段 */
+export function prototypeViewActionLabel(role: UserRole, stage: SessionStage): string | null {
+  if (role !== 'frontend' && role !== 'backend') return null
+  if (stage === 'development' || stage === 'qa' || stage === 'done') {
+    return '查看原型'
+  }
+  return null
+}
+
+export function pickPrototypePreviewPath(paths: string[]): string {
+  const order = ['docs/prototype.html', 'prototype.html']
+  for (const candidate of order) {
+    if (paths.includes(candidate)) return candidate
+  }
+  return order[0]
+}
+
 export function stageAdvanceHint(role: UserRole, stage: SessionStage): string | null {
   if (roleCanAdvanceFrom(role, stage) || stage === 'done') return null
   if (stage === 'requirement' || stage === 'prototype') {
@@ -121,9 +140,30 @@ export function stageKickoffMessage(stage: SessionStage, role: UserRole): string
     return '请根据 REQUIREMENTS.md 生成可点击的 prototype.html'
   }
   if (stage === 'development' && (role === 'frontend' || role === 'backend')) {
-    return '请根据 prototype.html 和 REQUIREMENTS.md 实现 index.html'
+    return '请根据平台「查看原型」中的需求实现功能；本地绑定项目勿新增 docs/ 目录'
   }
   return null
+}
+
+export function devSandboxKickoffMessage(
+  origin: DevProjectOriginMode,
+  stackSummary?: string | null,
+  git?: { main_branch: string; dev_branch: string } | null,
+): string {
+  if (origin === 'import') {
+    const branchLine = git
+      ? `当前在开发分支 ${git.dev_branch}（从主分支 ${git.main_branch} 拉出）。`
+      : ''
+    return (
+      `${branchLine}本地项目已绑定沙箱。原型与需求请在平台「查看原型」/收件箱参考，勿往仓库写入 docs/；` +
+      '在本分支上二次开发，完成后查看 diff 再 push。'
+    )
+  }
+  const stackLine = stackSummary ? `推荐栈：${stackSummary}。` : ''
+  return (
+    `${stackLine}请按 .devflow/project.json 中的 stack_id 在 frontend/ 与 backend/ 初始化工程，` +
+    '并对照 docs/ 实现需求；M3 预览仍可使用根目录 index.html。'
+  )
 }
 
 export function composerPlaceholder(stage: SessionStage, role: UserRole): string {

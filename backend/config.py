@@ -40,6 +40,12 @@ class Settings:
     workspaces_root: str = os.getenv("WORKSPACES_ROOT", "./workspaces")
     deliveries_root: str = os.getenv("DELIVERIES_ROOT", "./deliveries")
     agent_max_iterations: int = int(os.getenv("AGENT_MAX_ITERATIONS", "12"))
+    # Electron 桌面端：允许绑定/读写本机绝对路径（VS Code 式打开文件夹；生产 Docker 请保持 false）
+    allow_local_path_import: bool = os.getenv("ALLOW_LOCAL_PATH_IMPORT", "").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
 
 @lru_cache

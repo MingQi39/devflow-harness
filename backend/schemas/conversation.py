@@ -27,6 +27,7 @@ class ConversationStageUpdate(BaseModel):
 class ConversationOut(BaseModel):
     id: uuid.UUID
     title: str
+    project_id: uuid.UUID | None = None
     stage: SessionStage
     share_token: Optional[str]
     shared_at: Optional[datetime]

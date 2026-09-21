@@ -14,11 +14,11 @@ from deps import require_permission
 from models.user import User
 from schemas.files import FileContentResponse, FileTreeNode, FileTreeResponse
 from services.conversations import get_owned_conversation
+from services.conversation_workspace import workspace_for_conversation
 from services.workspace import (
     WorkspaceError,
     build_prototype_handoff_zip,
     build_tree,
-    ensure_workspace,
     read_file,
 )
 
@@ -32,7 +32,7 @@ def list_files(
     db: Annotated[Session, Depends(get_db)],
 ) -> FileTreeResponse:
     get_owned_conversation(db, user, conversation_id)
-    workspace = ensure_workspace(conversation_id)
+    workspace = workspace_for_conversation(db, conversation_id)
     tree = [FileTreeNode.model_validate(node) for node in build_tree(workspace)]
     return FileTreeResponse(tree=tree)
 
@@ -45,7 +45,7 @@ def get_file_content(
     db: Annotated[Session, Depends(get_db)],
 ) -> FileContentResponse:
     get_owned_conversation(db, user, conversation_id)
-    workspace = ensure_workspace(conversation_id)
+    workspace = workspace_for_conversation(db, conversation_id)
     try:
         content = read_file(workspace, path)
     except WorkspaceError as exc:
@@ -64,7 +64,7 @@ def export_prototype_handoff(
 ) -> Response:
     """ZIP bundle for PM → dev handoff (prototype + requirements)."""
     get_owned_conversation(db, user, conversation_id)
-    workspace = ensure_workspace(conversation_id)
+    workspace = workspace_for_conversation(db, conversation_id)
     try:
         payload = build_prototype_handoff_zip(workspace)
     except WorkspaceError as exc:

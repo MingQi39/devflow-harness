@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import get_settings
 from db import SessionLocal
-from routers import auth, chat, conversations, files, organizations, shared
+from routers import auth, chat, conversations, files, organizations, projects, shared
 from seed import seed_permissions
 from seed_organizations import seed_default_org
 
@@ -51,6 +51,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(organizations.router)
+app.include_router(projects.router)
 app.include_router(conversations.router)
 app.include_router(files.router)
 app.include_router(shared.router)

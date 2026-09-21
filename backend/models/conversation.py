@@ -26,6 +26,12 @@ class Conversation(Base):
         nullable=False,
         index=True,
     )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     title: Mapped[str] = mapped_column(String(200), nullable=False, default="新对话")
     stage: Mapped[SessionStage] = mapped_column(
         Enum(SessionStage, name="session_stage", native_enum=True),

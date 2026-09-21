@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react'
-import { Link, Navigate, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { chatHomePath } from '../lib/lastConversation'
 import {
   clearRememberedPassword,
   loadLastEmail,
@@ -12,6 +13,12 @@ import {
 export default function LoginPage() {
   const { login, isAuthenticated, isLoading } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const redirectTarget =
+    (location.state as { from?: { pathname?: string; search?: string; hash?: string } } | null)
+      ?.from?.pathname != null
+      ? `${(location.state as { from: { pathname: string; search?: string; hash?: string } }).from.pathname}${(location.state as { from: { search?: string } }).from.search ?? ''}${(location.state as { from: { hash?: string } }).from.hash ?? ''}`
+      : chatHomePath()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [rememberPassword, setRememberPassword] = useState(true)
@@ -33,7 +40,7 @@ export default function LoginPage() {
   }
 
   if (isAuthenticated) {
-    return <Navigate to="/" replace />
+    return <Navigate to={redirectTarget} replace />
   }
 
   const handleSubmit = async (event: FormEvent) => {
@@ -49,7 +56,7 @@ export default function LoginPage() {
       } else {
         clearRememberedPassword()
       }
-      navigate('/')
+      navigate(redirectTarget, { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : '登录失败')
     } finally {

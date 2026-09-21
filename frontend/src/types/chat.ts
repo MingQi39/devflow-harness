@@ -22,6 +22,7 @@ export interface ChatMessage {
 export interface Conversation {
   id: string
   title: string
+  projectId: string | null
   stage: SessionStage
   shareToken: string | null
   sharedAt: string | null

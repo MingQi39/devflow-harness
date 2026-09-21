@@ -29,5 +29,7 @@ export interface PrototypeDelivery {
   title: string
   message: string
   read_at: string | null
+  dev_project_id: string | null
+  dev_conversation_id: string | null
   created_at: string
 }

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from collections.abc import Callable, Iterator
 from datetime import datetime, timezone
@@ -15,11 +16,33 @@ from config import get_settings
 from db import SessionLocal
 from models.conversation import Conversation
 from models.message import Message, MessageRole
-from services.agent_tools import TOOL_DEFINITIONS, execute_tool
+from models.user import User
+from services.agent_tools import execute_tool, tools_for_stage
+from services.conversation_workspace import workspace_for_conversation
+from services.project_git import format_agent_git_context
 from services.session_stage import SessionStage, build_system_prompt
-from services.workspace import ensure_workspace
+from services.workspace import ensure_project_workspace
 
 ShouldStop = Callable[[], bool]
+
+_GIT_BRANCH_QUESTION = re.compile(
+    r"分支|当前分支|什么分支|哪个分支|git\s*状态|git\s*branch|checkout|devflow/",
+    re.IGNORECASE,
+)
+
+
+def _augment_user_message_for_git(user_message: str, git_context: str, stage: SessionStage) -> str:
+    if stage is not SessionStage.development or not git_context.strip():
+        return user_message
+    if not _GIT_BRANCH_QUESTION.search(user_message):
+        return user_message
+    return (
+        f"{git_context.strip()}\n\n"
+        "[Answer the user's git/branch question using ONLY the Live Git scan above. "
+        "If sandbox root is NOT a git repository, say so clearly — do not claim a root branch. "
+        "Call git_status if you need a fresh scan. Do not read .git/HEAD or cite old chat.]\n\n"
+        f"User: {user_message}"
+    )
 
 
 def build_api_messages(history: list[Message]) -> list[dict[str, Any]]:
@@ -106,12 +129,33 @@ def run_agent_loop(
     stage: SessionStage = SessionStage.requirement,
 ) -> Iterator[dict[str, Any]]:
     settings = get_settings()
-    workspace = ensure_workspace(conversation_id)
+    db = SessionLocal()
+    git_context = ""
+    developer_role: str | None = None
+    try:
+        workspace = workspace_for_conversation(db, conversation_id)
+        conversation = db.get(Conversation, conversation_id)
+        if (
+            stage is SessionStage.development
+            and conversation is not None
+            and conversation.project_id is not None
+        ):
+            developer = db.get(User, conversation.user_id)
+            developer_role = developer.role.value if developer is not None else None
+            project_root = ensure_project_workspace(conversation.project_id)
+            git_context = format_agent_git_context(project_root, developer_role)
+    finally:
+        db.close()
+    effective_user_message = _augment_user_message_for_git(user_message, git_context, stage)
     api_messages: list[dict[str, Any]] = [
-        {"role": "system", "content": build_system_prompt(stage)}
+        {
+            "role": "system",
+            "content": build_system_prompt(stage, workspace, git_context=git_context),
+        }
     ]
     api_messages.extend(build_api_messages(history))
-    api_messages.append({"role": "user", "content": user_message})
+    api_messages.append({"role": "user", "content": effective_user_message})
+    tool_definitions = tools_for_stage(stage.value)
 
     yield {"type": "started"}
 
@@ -123,7 +167,7 @@ def run_agent_loop(
         stream = client.chat.completions.create(
             model=model,
             messages=api_messages,
-            tools=TOOL_DEFINITIONS,
+            tools=tool_definitions,
             stream=True,
         )
 
@@ -170,7 +214,13 @@ def run_agent_loop(
                     "arguments": arguments,
                 }
 
-                result, changed = execute_tool(workspace, tool_name, arguments)
+                result, changed = execute_tool(
+                    workspace,
+                    tool_name,
+                    arguments,
+                    developer_role=developer_role,
+                    stage_value=stage.value,
+                )
                 if changed:
                     file_changed = True
 

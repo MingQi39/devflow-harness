@@ -28,7 +28,7 @@ from schemas.conversation import (
 )
 from services.conversations import get_owned_conversation
 from services.session_stage import StageError, transition_session_stage
-from services.workspace import ensure_workspace, remove_workspace
+from services.conversation_workspace import remove_storage_for_conversation, workspace_for_conversation
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -99,7 +99,7 @@ def update_conversation_stage(
         .order_by(Message.created_at.asc())
         .all()
     )
-    workspace = ensure_workspace(conversation_id)
+    workspace = workspace_for_conversation(db, conversation_id)
     try:
         conversation.stage = transition_session_stage(
             conversation.stage,
@@ -125,7 +125,7 @@ def delete_conversation(
     conversation_uuid = conversation.id
     db.delete(conversation)
     db.commit()
-    remove_workspace(conversation_uuid)
+    remove_storage_for_conversation(db, conversation)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

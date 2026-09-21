@@ -21,7 +21,7 @@ export default function SendPrototypeDialog({
   onSent,
 }: SendPrototypeDialogProps) {
   const [selected, setSelected] = useState<string[]>([])
-  const [message, setMessage] = useState('')
+  const [requirementTitle, setRequirementTitle] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -39,6 +39,11 @@ export default function SendPrototypeDialog({
       setError('请选择至少一位开发同学')
       return
     }
+    const title = requirementTitle.trim()
+    if (!title) {
+      setError('请填写需求标题')
+      return
+    }
     setSubmitting(true)
     setError(null)
     try {
@@ -47,13 +52,13 @@ export default function SendPrototypeDialog({
         body: JSON.stringify({
           conversation_id: conversationId,
           recipient_user_ids: selected,
-          message,
+          title,
         }),
       })
       onSent()
       onClose()
       setSelected([])
-      setMessage('')
+      setRequirementTitle('')
     } catch (err) {
       setError(err instanceof Error ? err.message : '发送失败')
     } finally {
@@ -105,13 +110,18 @@ export default function SendPrototypeDialog({
               ))}
             </ul>
           )}
-          <textarea
-            className="send-prototype-message"
-            placeholder="附言（可选）：例如请按原型实现 index.html…"
-            value={message}
-            onChange={(event) => setMessage(event.target.value)}
-            rows={3}
-          />
+          <label className="send-prototype-field-label">
+            需求标题
+            <input
+              type="text"
+              className="send-prototype-title"
+              placeholder="例如：待办清单支持增删改"
+              value={requirementTitle}
+              onChange={(event) => setRequirementTitle(event.target.value)}
+              maxLength={200}
+              required
+            />
+          </label>
           {error ? <p className="error-banner compact">{error}</p> : null}
         </div>
         <div className="confirm-dialog-actions">

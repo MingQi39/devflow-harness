@@ -15,6 +15,8 @@ interface FileTreePanelProps {
   onBackToChat: () => void
   /** PM 空状态强调生成原型；开发/测试强调实现与点测 */
   emptyHintVariant?: 'pm' | 'dev'
+  /** 打开指定文件预览（如开发「查看原型」），不改变 Session 阶段 */
+  focusPath?: string | null
 }
 
 async function friendlyLoadError(error: unknown): Promise<string> {
@@ -111,6 +113,7 @@ export default function FileTreePanel({
   onSendToDevelopers,
   onBackToChat,
   emptyHintVariant = 'pm',
+  focusPath = null,
 }: FileTreePanelProps) {
   const [tree, setTree] = useState<FileTreeNode[]>([])
   const [loading, setLoading] = useState(false)
@@ -214,6 +217,15 @@ export default function FileTreePanel({
     // preferredPaths encoded in preferredKey to avoid unstable array reference
     // eslint-disable-next-line react-hooks/exhaustive-deps -- preferredKey tracks preferredPaths
   }, [loadTree, refreshKey, preferredKey, clearPreview, loadFileContent])
+
+  useEffect(() => {
+    if (!focusPath || tree.length === 0) return
+    const files = flattenFiles(tree)
+    const exists = files.some((file) => file.path === focusPath)
+    if (exists) {
+      void loadFileContent(focusPath)
+    }
+  }, [focusPath, tree, loadFileContent])
 
   const showEmpty = !loading && !loadError && tree.length === 0
   const fileCount = flattenFiles(tree).length
